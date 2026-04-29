@@ -41,7 +41,7 @@ Thumbs.db
 .env
 .venv
 
-# Data files (if you want to keep them local)
-*.xlsx
-*.csv
-*.webp
+# Data files (Allowed for deployment, usually you'd ignore these)
+# *.xlsx
+# *.csv
+# *.webp
