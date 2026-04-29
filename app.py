@@ -236,7 +236,6 @@ def build_daily_table(active_holdings, daily_snapshot):
     rows = []
     maxfolio_path = os.path.join(BASE_DIR, "MOMENTUM_DB_2 copy", "Momentum_Maxfolio.xlsx")
     maxfolio_df = None
-    import os
     if os.path.exists(maxfolio_path):
         try:
             maxfolio_df = pd.read_excel(maxfolio_path)
