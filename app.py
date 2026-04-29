@@ -13,8 +13,8 @@ from nav_updater import compute_calendar_returns
 # ─────────────────────────────────────────────
 # Credentials & Paths
 # ─────────────────────────────────────────────
-TRUEDATA_USERNAME = st.secrets.get("TRUEDATA_USERNAME", "tdwsf695")
-TRUEDATA_PASSWORD = st.secrets.get("TRUEDATA_PASSWORD", "ocean@695")
+TRUEDATA_USERNAME = st.secrets["TRUEDATA_USERNAME"]
+TRUEDATA_PASSWORD = st.secrets["TRUEDATA_PASSWORD"]
 
 # Use relative paths for portability
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

@@ -80,11 +80,12 @@ def _last_total(df: pd.DataFrame, col: str = 'Buy_Hold_Value') -> float:
 # =============================================================================
 try:
     import streamlit as st
-    TRUEDATA_USERNAME = st.secrets.get("TRUEDATA_USERNAME", "tdwsf695")
-    TRUEDATA_PASSWORD = st.secrets.get("TRUEDATA_PASSWORD", "ocean@695")
-except:
-    TRUEDATA_USERNAME = 'tdwsf695'
-    TRUEDATA_PASSWORD = 'ocean@695'
+    TRUEDATA_USERNAME = st.secrets["TRUEDATA_USERNAME"]
+    TRUEDATA_PASSWORD = st.secrets["TRUEDATA_PASSWORD"]
+except Exception as e:
+    logger.error(f"Failed to load credentials from st.secrets: {e}")
+    TRUEDATA_USERNAME = ""
+    TRUEDATA_PASSWORD = ""
 
 
 def fetch_truedata_history(
