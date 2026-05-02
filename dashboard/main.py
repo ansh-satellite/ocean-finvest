@@ -1023,16 +1023,18 @@ if "Overview" in menu:
 # 🏭 ALLOCATION SECTION
 # ─────────────────────────────────────────────
 elif "Allocation" in menu:
+    pleasant_palette = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8", "#F7DC6F", "#BB8FCE", "#82E0AA", "#F1948A"]
     col1, col2 = st.columns(2)
 
     with col1:
         st.markdown("<div class='glass-card'><h3>🏭 Sector Allocation</h3>", unsafe_allow_html=True)
         sec_df = load_sector_allocation(SECTOR_ALLOCATION_PATH)
         if sec_df is not None and not sec_df.empty:
-            custom_colors = ["#00e676", "#18ffff", "#d500f9", "#ffea00", "#ff5252", "#00b0ff", "#1de9b6", "#ff9100", "#651fff"]
-            fig_sec = px.pie(sec_df, names="Sector", values="Percent_Allocation", hole=0.5, color_discrete_sequence=custom_colors)
+            fig_sec = px.pie(sec_df, names="Sector", values="Percent_Allocation", hole=0.5, 
+                             color_discrete_sequence=pleasant_palette)
             fig_sec.update_traces(textposition="inside", textinfo="label+percent", textfont_size=12)
-            fig_sec.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#fff"), margin=dict(t=0, b=0, l=0, r=0))
+            fig_sec.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
+                                 font=dict(color="#fff"), margin=dict(t=0, b=0, l=0, r=0))
             st.plotly_chart(fig_sec, use_container_width=True)
         else:
             st.info("No sector allocation data available.")
@@ -1047,12 +1049,11 @@ elif "Allocation" in menu:
             asset_agg = asset_breakdown_df.groupby("Asset_Type", as_index=False)["Percent_Allocation"].sum()
             
             fig_asset = px.pie(asset_agg, names="Asset_Type", values="Percent_Allocation", hole=0.5, 
-                               color_discrete_sequence=["#00b0ff", "#ffea00", "#00e676"])
+                               color_discrete_sequence=pleasant_palette[2:])
             fig_asset.update_traces(textposition="inside", textinfo="label+percent", textfont_size=12)
             fig_asset.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
                                    font=dict(color="#fff"), margin=dict(t=0, b=0, l=0, r=0))
             st.plotly_chart(fig_asset, use_container_width=True)
-
         else:
             st.info("No asset breakdown data available.")
         st.markdown("</div>", unsafe_allow_html=True)
@@ -1060,14 +1061,16 @@ elif "Allocation" in menu:
     st.markdown("<div class='glass-card'><h3>📊 MCAP Allocation</h3>", unsafe_allow_html=True)
     mcap_df = load_mcap_allocation(MCAP_ALLOCATION_PATH)
     if mcap_df is not None and not mcap_df.empty:
-        mcap_colors = ["#ff4081", "#7c4dff", "#00e5ff", "#b2ff59", "#ffd740"]
-        fig_mcap = px.pie(mcap_df, names="Market_Cap", values="Allocation_Pct", hole=0.5, color_discrete_sequence=mcap_colors)
+        fig_mcap = px.pie(mcap_df, names="Market_Cap", values="Allocation_Pct", hole=0.5, 
+                          color_discrete_sequence=pleasant_palette[4:])
         fig_mcap.update_traces(textposition="inside", textinfo="label+percent", textfont_size=14)
-        fig_mcap.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#fff"), margin=dict(t=0, b=0, l=0, r=0))
+        fig_mcap.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
+                               font=dict(color="#fff"), margin=dict(t=0, b=0, l=0, r=0))
         st.plotly_chart(fig_mcap, use_container_width=True)
     else:
         st.info("No MCAP allocation data available.")
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 # ─────────────────────────────────────────────
 # 📅 PERFORMANCE HISTORY
