@@ -91,7 +91,8 @@ def get_credentials():
                 return s["truedata"]["username"], s["truedata"]["password"]
         except:
             pass
-    return "tdwsf695", "ocean@695"
+    return None, None
+
 
 TRUEDATA_USERNAME, TRUEDATA_PASSWORD = get_credentials()
 

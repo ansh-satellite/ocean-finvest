@@ -22,8 +22,9 @@ try:
     TD_USERNAME = st.secrets["truedata"]["username"]
     TD_PASSWORD = st.secrets["truedata"]["password"]
 except Exception:
-    TD_USERNAME = "tdwsf695"
-    TD_PASSWORD = "ocean@695"
+    TD_USERNAME = None
+    TD_PASSWORD = None
+
 
 st.set_page_config(page_title="NAV Dashboard", page_icon="📊", layout="wide")
 

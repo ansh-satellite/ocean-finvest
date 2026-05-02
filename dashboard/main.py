@@ -17,9 +17,9 @@ try:
     TRUEDATA_USERNAME = st.secrets["truedata"]["username"]
     TRUEDATA_PASSWORD = st.secrets["truedata"]["password"]
 except Exception:
-    # Fallback for local testing if secrets.toml is not in .streamlit
-    TRUEDATA_USERNAME = "tdwsf695"
-    TRUEDATA_PASSWORD = "ocean@695"
+    TRUEDATA_USERNAME = None
+    TRUEDATA_PASSWORD = None
+
 
 # Use relative paths for portability
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
