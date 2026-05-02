@@ -6,5 +6,5 @@ truedata-ws
 truedata
 yfinance
 openpyxl
-matplotlib
 python-dateutil
+toml
