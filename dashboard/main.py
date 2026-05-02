@@ -913,41 +913,6 @@ with st.spinner("Initializing Dashboard..."):
     live_month_return = nav_data.get("return", 0.0)
     live_month_bm_return = nav_data.get("bm_return", 0.0)
 
-def get_latest_calendar_portfolio_return(calendar_df):
-    """
-    Fetch portfolio return from calendar returns.
-    
-    Priority:
-    1. Current month PORT return (if it has non-zero movement)
-    2. Previous available month PORT return (fallback)
-    """
-    if calendar_df is None or calendar_df.empty:
-        return 0.0, "No Data"
-
-    current_month = pd.Timestamp.today().strftime("%b-%y")
-    today = pd.Timestamp.today()
-    
-    calendar_df = calendar_df.copy()
-    calendar_df["Month"] = calendar_df["Month"].astype(str).str.strip()
-    
-    # Try to find current month
-    current_row = calendar_df[calendar_df["Month"] == current_month]
-    
-    if not current_row.empty:
-        port_ret = float(current_row.iloc[-1]["PORT"])
-        # If it's early in the month (day <= 7) and return is 0.0, 
-        # it likely means no trading has happened yet. Fallback to previous month.
-        if today.day <= 7 and port_ret == 0.0:
-            if len(calendar_df) > 1:
-                prev_row = calendar_df.iloc[-2]
-                return float(prev_row["PORT"]), str(prev_row["Month"])
-        
-        return port_ret, current_month
-
-    # Fallback to absolute last month in table
-    latest_row = calendar_df.iloc[-1]
-    return float(latest_row["PORT"]), str(latest_row["Month"])
-
 
 refresh_benchmark_if_due()
 bm = st.session_state.benchmark_data
@@ -1245,18 +1210,6 @@ elif "Trailing Returns" in menu:
 # ─────────────────────────────────────────────
 elif "Monthly Performance" in menu:
     st.markdown("<div class='glass-card'><h3>📆 Monthly Performance Dashboard</h3>", unsafe_allow_html=True)
-    # Portfolio Return Card from Calendar Returns
-    monthly_port_return, month_used = get_latest_calendar_portfolio_return(calendar_df)
-
-    st.markdown(
-    f"""
-    <div class='glass-card'>
-        <p class='metric-title'>PORTFOLIO RETURN ({month_used})</p>
-        <p class='metric-value'>{monthly_port_return:+.2f}%</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
     if not os.path.exists(MONTHLY_DATA_PATH):
         st.error(f"File not found: {MONTHLY_DATA_PATH}")
     else:
@@ -1279,9 +1232,13 @@ elif "Monthly Performance" in menu:
                         if not april_row.empty:
                             april_ret = april_row.iloc[0]["PORT"]
 
-                    # Removed redundant Asset Contribution Table as requested
-                    pass
+                    asset_contrib_df = build_monthly_asset_contribution_table(result_df, portfolio_return_override=april_ret)
+                    if asset_contrib_df is not None:
+                        st.subheader("Asset Contribution Table")
+                        styled_contrib = asset_contrib_df.style.format({"Weight": "{:.2f}%", "% Returns": "{:+.2f}%", "Contribution": "{:+.2f}%"})
+                        if "% Returns" in asset_contrib_df.columns and "Contribution" in asset_contrib_df.columns:
+                            styled_contrib = styled_contrib.map(style_alpha, subset=["% Returns", "Contribution"])
+                        st.dataframe(styled_contrib, use_container_width=True)
                 else:
                     st.error("Could not build monthly performance data.")
     st.markdown("</div>", unsafe_allow_html=True)
-
