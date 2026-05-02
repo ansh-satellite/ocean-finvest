@@ -916,33 +916,38 @@ with st.spinner("Initializing Dashboard..."):
 def get_latest_calendar_portfolio_return(calendar_df):
     """
     Fetch portfolio return from calendar returns.
-
+    
     Priority:
-    1. Current month PORT return
+    1. Current month PORT return (if it has non-zero movement)
     2. Previous available month PORT return (fallback)
     """
-
     if calendar_df is None or calendar_df.empty:
         return 0.0, "No Data"
 
     current_month = pd.Timestamp.today().strftime("%b-%y")
-
+    today = pd.Timestamp.today()
+    
     calendar_df = calendar_df.copy()
     calendar_df["Month"] = calendar_df["Month"].astype(str).str.strip()
-
-    # 1. Current month available
+    
+    # Try to find current month
     current_row = calendar_df[calendar_df["Month"] == current_month]
-
+    
     if not current_row.empty:
         port_ret = float(current_row.iloc[-1]["PORT"])
+        # If it's early in the month (day <= 7) and return is 0.0, 
+        # it likely means no trading has happened yet. Fallback to previous month.
+        if today.day <= 7 and port_ret == 0.0:
+            if len(calendar_df) > 1:
+                prev_row = calendar_df.iloc[-2]
+                return float(prev_row["PORT"]), str(prev_row["Month"])
+        
         return port_ret, current_month
 
-    # 2. Fallback → previous available month
+    # Fallback to absolute last month in table
     latest_row = calendar_df.iloc[-1]
-    port_ret = float(latest_row["PORT"])
-    month_used = str(latest_row["Month"])
+    return float(latest_row["PORT"]), str(latest_row["Month"])
 
-    return port_ret, month_used
 
 refresh_benchmark_if_due()
 bm = st.session_state.benchmark_data
