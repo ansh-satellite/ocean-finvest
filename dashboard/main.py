@@ -588,12 +588,21 @@ def build_monthly_performance(file_path):
 
     tickers = df[ticker_col].tolist()
     live_prices = fetch_ltp_truedata(tickers)
+    
+    # Use LTP if available, otherwise fallback to the 'Close' column from the file
     df["Current Price"] = df[ticker_col].map(live_prices)
+    if "Close" in df.columns:
+        df["Current Price"] = df["Current Price"].fillna(df["Close"])
+    
     df["Return %"] = ((df["Current Price"] - df[start_price_col]) / df[start_price_col]) * 100
-    df[start_price_col] = pd.to_numeric(df[start_price_col], errors="coerce").round(2)
-    df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").round(2)
-    df["Return %"] = pd.to_numeric(df["Return %"], errors="coerce").round(2)
-    return df
+    
+    # Robust numeric conversion
+    df[start_price_col] = pd.to_numeric(df[start_price_col], errors="coerce")
+    df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce")
+    df["Return %"] = pd.to_numeric(df["Return %"], errors="coerce")
+    
+    return df.round(2)
+
 
 
 def build_monthly_asset_contribution_table(df, portfolio_return_override=None):
