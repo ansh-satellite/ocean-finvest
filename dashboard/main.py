@@ -1039,14 +1039,20 @@ elif "Allocation" in menu:
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
-        st.markdown("<div class='glass-card'><h3>🧩 Asset Sunburst</h3>", unsafe_allow_html=True)
+        st.markdown("<div class='glass-card'><h3>🧩 Asset Allocation</h3>", unsafe_allow_html=True)
         asset_breakdown_df = load_asset_breakdown(ASSET_ALLOCATION_PATH)
         if asset_breakdown_df is not None and not asset_breakdown_df.empty:
             asset_breakdown_df = apply_target_asset_weights(asset_breakdown_df)
-            fig_sun = px.sunburst(asset_breakdown_df, path=["Asset_Type", "Component"], values="Percent_Allocation", color_discrete_sequence=px.colors.sequential.Blues)
-            fig_sun.update_traces(texttemplate="%{label}<br>%{value:.2f}%", hovertemplate="<b>%{label}</b><br>Allocation: %{value:.2f}%<extra></extra>")
-            fig_sun.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#fff"), margin=dict(t=0, b=0, l=0, r=0))
-            st.plotly_chart(fig_sun, use_container_width=True)
+            # Aggregate to Asset_Type only
+            asset_agg = asset_breakdown_df.groupby("Asset_Type", as_index=False)["Percent_Allocation"].sum()
+            
+            fig_asset = px.pie(asset_agg, names="Asset_Type", values="Percent_Allocation", hole=0.5, 
+                               color_discrete_sequence=["#00b0ff", "#ffea00", "#00e676"])
+            fig_asset.update_traces(textposition="inside", textinfo="label+percent", textfont_size=12)
+            fig_asset.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
+                                   font=dict(color="#fff"), margin=dict(t=0, b=0, l=0, r=0))
+            st.plotly_chart(fig_asset, use_container_width=True)
+
         else:
             st.info("No asset breakdown data available.")
         st.markdown("</div>", unsafe_allow_html=True)
