@@ -811,43 +811,21 @@ with st.spinner("Initializing Dashboard..."):
     nav_df = nav_data["nav_df"]
     
     # 🔥 AUGMENT NAV_DF WITH LIVE DATA FOR TRAILING & CALENDAR CALCULATIONS
-    live_today = pd.Timestamp.today().normalize()
-    if live_today not in nav_df["DATE"].dt.normalize().values:
-        live_row = pd.DataFrame([{
-            "DATE": live_today,
-            "PORT NAV": nav_data["current_nav"],
-            "BM NAV": nav_data["current_bm_nav"]
-        }])
-        nav_df = pd.concat([nav_df, live_row], ignore_index=True).sort_values("DATE").reset_index(drop=True)
+    live_data_date = nav_data.get("current_date")
+    if live_data_date is not None:
+        live_data_date = pd.Timestamp(live_data_date).normalize()
+        if live_data_date not in nav_df["DATE"].dt.normalize().values:
+            live_row = pd.DataFrame([{
+                "DATE": live_data_date,
+                "PORT NAV": nav_data["current_nav"],
+                "BM NAV": nav_data["current_bm_nav"]
+            }])
+            nav_df = pd.concat([nav_df, live_row], ignore_index=True).sort_values("DATE").reset_index(drop=True)
+
 
     calendar_df = compute_calendar_returns(nav_df)
     
-    # Ensure current month is in calendar_df
-    current_nav_val, current_bm_nav_val, _ = fetch_current_nav_values_from_df(nav_df)
-    current_month_str = pd.Timestamp.today().strftime("%b-%y")
 
-    live_data_date = nav_data.get("current_date")
-    
-    if (not calendar_df.empty and "Month" in calendar_df.columns and current_month_str not in calendar_df["Month"].astype(str).values 
-        and live_data_date is not None and live_data_date.month == pd.Timestamp.today().month):
-
-        month_start = pd.Timestamp.today().replace(day=1)
-        prev_month_rows = nav_df[nav_df["DATE"] < month_start]
-        if not prev_month_rows.empty:
-            month_start_row = prev_month_rows.iloc[-1]
-            m_start_port = float(month_start_row["PORT NAV"])
-            m_start_bm = float(month_start_row["BM NAV"])
-            
-            l_month_ret = ((current_nav_val - m_start_port) / m_start_port) * 100
-            l_month_bm_ret = ((current_bm_nav_val - m_start_bm) / m_start_bm) * 100
-            
-            new_row = pd.DataFrame([{
-                "Month": current_month_str,
-                "PORT": round(l_month_ret, 2),
-                "BSE 500": round(l_month_bm_ret, 2),
-                "Alpha": round(l_month_ret - l_month_bm_ret, 2)
-            }])
-            calendar_df = pd.concat([calendar_df, new_row], ignore_index=True)
 
     live_month_return = nav_data.get("return", 0.0)
     live_month_bm_return = nav_data.get("bm_return", 0.0)
