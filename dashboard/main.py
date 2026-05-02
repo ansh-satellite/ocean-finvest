@@ -826,7 +826,11 @@ with st.spinner("Initializing Dashboard..."):
     current_nav_val, current_bm_nav_val, _ = fetch_current_nav_values_from_df(nav_df)
     current_month_str = pd.Timestamp.today().strftime("%b-%y")
 
-    if not calendar_df.empty and "Month" in calendar_df.columns and current_month_str not in calendar_df["Month"].astype(str).values:
+    live_data_date = nav_data.get("current_date")
+    
+    if (not calendar_df.empty and "Month" in calendar_df.columns and current_month_str not in calendar_df["Month"].astype(str).values 
+        and live_data_date is not None and live_data_date.month == pd.Timestamp.today().month):
+
         month_start = pd.Timestamp.today().replace(day=1)
         prev_month_rows = nav_df[nav_df["DATE"] < month_start]
         if not prev_month_rows.empty:

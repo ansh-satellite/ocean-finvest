@@ -277,7 +277,8 @@ def get_live_nav_data():
         "nav_df":         nav_df,
         "live_table":     live_table,
         "current_nav":    current_nav,       # live PORT NAV (100-base)
-        "current_bm_nav": current_bm_nav,    # live BM NAV  (100-base)  ← NEW
+        "current_bm_nav": current_bm_nav,    # live BM NAV  (100-base)
+        "current_date":   current_date,      # Date of the live data
         "return":         return_pct,
         "bm_return":      bm_return,
-    }
+    }
