@@ -276,18 +276,48 @@ def build_daily_table(active_holdings, price_history_df):
             continue
 
         available_dates = sorted(source_df["Date"].dt.normalize().unique())
-        yest_val   = yest_row["Buy_Hold_Value"]
-        curr_price = today_row["Close"]
+        
+        if not available_dates:
+            continue
 
-        pct = ((curr_price - yest_close) / yest_close * 100) if yest_close != 0 else 0.0
+        # ── Determine Today and Yesterday dates ─────────────────────────
+        if today in available_dates:
+            today_idx = available_dates.index(today)
+            today_dt = today
+            # If today is the first date, yesterday is also today
+            yesterday_dt = available_dates[today_idx - 1] if today_idx > 0 else today
+        else:
+            # Last available is "Today", second-to-last is "Yesterday"
+            today_dt = available_dates[-1]
+            yesterday_dt = available_dates[-2] if len(available_dates) > 1 else available_dates[-1]
+
+        # Get the actual data rows
+        today_snap = source_df[source_df["Date"].dt.normalize() == today_dt]
+        yest_snap  = source_df[source_df["Date"].dt.normalize() == yesterday_dt]
+
+        if today_snap.empty or yest_snap.empty:
+            continue
+
+        t_row = today_snap.iloc[-1]
+        y_row = yest_snap.iloc[-1]
+
+        y_close = float(y_row["Close"])
+        y_val   = float(y_row["Buy_Hold_Value"])
+        t_close = float(t_row["Close"])
+        t_val   = float(t_row["Buy_Hold_Value"]) # Use the actual value from the file for "today"
+
+        # Calculate % Change from Yesterday Close to Today Close
+        change_pct = ((t_close - y_close) / y_close * 100) if y_close != 0 else 0.0
 
         rows.append({
             "Ticker":              ticker,
-            "Yesterday Buy/Hold":  yest_val,
-            "Yesterday Close":     yest_close,
-            "Current Price":       curr_price,
-            "% Change":            pct,
-            "Current Value":       yest_val * (1 + pct / 100),
+            "Yesterday Buy/Hold":  y_val,
+            "Yesterday Close":     y_close,
+            "Current Price":       t_close,
+            "Ref_Close":           t_close,    # Reference for live refresh
+            "Ref_Val":             t_val,      # Reference for live refresh
+            "% Change":            round(change_pct, 2),
+            "Current Value":       t_val,
         })
 
     return pd.DataFrame(rows)
@@ -704,6 +734,7 @@ def compute_portfolio_return_from_table(daily_table) -> float:
 def update_daily_table_with_ltp(active_holdings, ltp_map):
     updated = st.session_state.daily_table.copy()
     for idx, row in updated.iterrows():
+        ticker = str(row["Ticker"]).upper()
         ltp = ltp_map.get(ticker)
         if ltp is not None:
             # We compare Live Price vs the "Today" price from the static table
