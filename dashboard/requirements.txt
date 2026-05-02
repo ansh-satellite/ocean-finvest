@@ -1,0 +1,10 @@
+pandas
+numpy
+streamlit
+plotly
+truedata-ws
+truedata
+yfinance
+openpyxl
+python-dateutil
+toml

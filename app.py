@@ -13,12 +13,13 @@ from nav_updater import compute_calendar_returns
 # ─────────────────────────────────────────────
 # Credentials & Paths
 # ─────────────────────────────────────────────
-TRUEDATA_USERNAME = st.secrets["TRUEDATA_USERNAME"]
-TRUEDATA_PASSWORD = st.secrets["TRUEDATA_PASSWORD"]
+TRUEDATA_USERNAME = "tdwsf695"
+TRUEDATA_PASSWORD = "ocean@695"
 
 # Use relative paths for portability
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, "MOMENTUM_DB_2 copy", "Trials", "Nifty_500_2025_apr_20_stocks_results_goldsilverdebt_buyhold_returns.xlsx")
+DATA_PATH_Final = os.path.join(BASE_DIR,"Momentum_Maxfolio.xlsx")
 SECTOR_ALLOCATION_PATH = os.path.join(BASE_DIR, "Sectorwise_equity_allocation.xlsx")
 ASSET_ALLOCATION_PATH = os.path.join(BASE_DIR, "stocks_with_sectors.xlsx")
 MCAP_ALLOCATION_PATH = os.path.join(BASE_DIR, "mcap_wise_stock_allocation.xlsx")
@@ -227,53 +228,90 @@ def load_and_process_data(file_path):
 
     trades["Is_Active"] = trades["Ticker"].isin(active_tickers)
 
-    pieces = [grp.tail(2) for _, grp in df.groupby("Ticker")]
+    pieces = [grp.tail(3) for _, grp in df.groupby("Ticker")]
     daily_snapshot = pd.concat(pieces, ignore_index=True)
     return trades, dataset_max_date, df, daily_snapshot
 
 
-def build_daily_table(active_holdings, daily_snapshot):
+def build_daily_table(active_holdings, price_history_df):
     rows = []
-    maxfolio_path = os.path.join(BASE_DIR, "MOMENTUM_DB_2 copy", "Momentum_Maxfolio.xlsx")
+    maxfolio_path = os.path.join(BASE_DIR, "Momentum_Maxfolio.xlsx")
     maxfolio_df = None
     if os.path.exists(maxfolio_path):
         try:
             maxfolio_df = pd.read_excel(maxfolio_path)
+            maxfolio_df["Date"] = pd.to_datetime(maxfolio_df["Date"])
             maxfolio_df["Ticker_Key"] = normalize_ticker_key(maxfolio_df["Ticker"])
         except:
             pass
 
+    today = pd.Timestamp.today().normalize()
+
     for _, row in active_holdings.iterrows():
         ticker = row["Ticker"]
-        snap = daily_snapshot[daily_snapshot["Ticker"] == ticker].sort_values("Date")
-        if len(snap) < 1:
-            continue
-        yest_row = snap.iloc[-2] if len(snap) >= 2 else snap.iloc[-1]
-        today_row = snap.iloc[-1]
-        yest_close = yest_row["Close"]
-        yest_val = yest_row["Buy_Hold_Value"]
-        curr_price = today_row["Close"]
-        
-        # Override for stale permanent assets using Momentum_Maxfolio.xlsx
-        if ticker.strip().upper() in ["GOLDBEES", "GOLDBESS", "LIQUIDCASE"] and maxfolio_df is not None:
-            t_df = maxfolio_df[maxfolio_df["Ticker_Key"] == ticker.strip().upper()].sort_values("Date")
-            if len(t_df) >= 2:
-                yest_close = t_df.iloc[-2]["Close"]
-                yest_val = t_df.iloc[-2]["Buy_Hold_Value"]
-                curr_price = t_df.iloc[-1]["Close"]
-        pct = ((curr_price - yest_close) / yest_close * 100) if yest_close != 0 else 0.0
-        rows.append(
-            {
-                "Ticker": ticker,
-                "Yesterday Buy/Hold": yest_val,
-                "Yesterday Close": yest_close,
-                "Current Price": curr_price,
-                "% Change": pct,
-                "Current Value": yest_val * (1 + pct / 100),
-            }
-        )
-    return pd.DataFrame(rows)
+        ticker_key = normalize_ticker_key(pd.Series([ticker]))[0]
 
+        # ── PRIMARY: Use Momentum_Maxfolio for ALL tickers ──────────────
+        source_df = None
+        if maxfolio_df is not None:
+            source_df = maxfolio_df[maxfolio_df["Ticker_Key"] == ticker_key].sort_values("Date")
+
+        # ── FALLBACK: Use raw price history if not found in maxfolio ────
+        if source_df is None or source_df.empty:
+            source_df = price_history_df[
+                price_history_df["Ticker"] == ticker
+            ].sort_values("Date").copy()
+            source_df["Date"] = pd.to_datetime(source_df["Date"])
+
+        if source_df is None or source_df.empty:
+            continue
+
+        available_dates = sorted(source_df["Date"].dt.normalize().unique())
+        
+        if not available_dates:
+            continue
+
+        # ── Determine Today and Yesterday dates ─────────────────────────
+        if today in available_dates:
+            today_idx = available_dates.index(today)
+            today_dt = today
+            # If today is the first date, yesterday is also today
+            yesterday_dt = available_dates[today_idx - 1] if today_idx > 0 else today
+        else:
+            # Last available is "Today", second-to-last is "Yesterday"
+            today_dt = available_dates[-1]
+            yesterday_dt = available_dates[-2] if len(available_dates) > 1 else available_dates[-1]
+
+        # Get the actual data rows
+        today_snap = source_df[source_df["Date"].dt.normalize() == today_dt]
+        yest_snap  = source_df[source_df["Date"].dt.normalize() == yesterday_dt]
+
+        if today_snap.empty or yest_snap.empty:
+            continue
+
+        t_row = today_snap.iloc[-1]
+        y_row = yest_snap.iloc[-1]
+
+        y_close = float(y_row["Close"])
+        y_val   = float(y_row["Buy_Hold_Value"])
+        t_close = float(t_row["Close"])
+        t_val   = float(t_row["Buy_Hold_Value"]) # Use the actual value from the file for "today"
+
+        # Calculate % Change from Yesterday Close to Today Close
+        change_pct = ((t_close - y_close) / y_close * 100) if y_close != 0 else 0.0
+
+        rows.append({
+            "Ticker":              ticker,
+            "Yesterday Buy/Hold":  y_val,
+            "Yesterday Close":     y_close,
+            "Current Price":       t_close,
+            "Ref_Close":           t_close,    # Reference for live refresh
+            "Ref_Val":             t_val,      # Reference for live refresh
+            "% Change":            round(change_pct, 2),
+            "Current Value":       t_val,
+        })
+
+    return pd.DataFrame(rows)
 
 def build_daily_contribution_table(daily_table):
     if daily_table is None or daily_table.empty:
@@ -281,41 +319,32 @@ def build_daily_contribution_table(daily_table):
 
     df = daily_table.copy()
     df["Ticker_Key"] = normalize_ticker_key(df["Ticker"])
-    total_prev = df["Yesterday Buy/Hold"].sum()
-    if total_prev == 0:
-        return None
+    
+    equity_df = df[~df["Ticker_Key"].isin(["GOLDBEES", "GOLDBESS", "LIQUIDCASE"])]
+    gold_df = df[df["Ticker_Key"].isin(["GOLDBEES", "GOLDBESS"])]
+    liquid_df = df[df["Ticker_Key"].isin(["LIQUIDCASE"])]
 
-    df["Category"] = "Equity"
-    df.loc[df["Ticker_Key"].isin({"GOLDBEES", "GOLDBESS"}), "Category"] = "Gold"
-    df.loc[df["Ticker_Key"].isin({"LIQUIDCASE"}), "Category"] = "Liquidcase"
+    equity_return = equity_df["% Change"].mean() if not equity_df.empty else 0.0
+    gold_return = gold_df["% Change"].mean() if not gold_df.empty else 0.0
+    liquid_return = liquid_df["% Change"].mean() if not liquid_df.empty else 0.0
 
-    grouped = (
-        df.groupby("Category")
-        .agg({"Yesterday Buy/Hold": "sum", "Current Value": "sum"})
-        .reset_index()
+    out = pd.DataFrame(
+        {
+            "Particular": ["Equity", "Gold", "Liquidcase"],
+            "Weight": [75.0, 10.0, 15.0],
+            "Return": [equity_return, gold_return, liquid_return],
+        }
     )
-    weight_map = {
-        "Equity": 75.0,
-        "Gold": 10.0,
-        "Liquidcase": 15.0
-    }
+    out["Contribution"] = (out["Weight"] * out["Return"]) / 100.0
 
-    grouped["Weight"] = grouped["Category"].map(weight_map).fillna(0)
-    grouped["Return"] = np.where(
-        grouped["Yesterday Buy/Hold"] != 0,
-        ((grouped["Current Value"] - grouped["Yesterday Buy/Hold"]) / grouped["Yesterday Buy/Hold"]) * 100,
-        0.0,
-    )
-    grouped["Contribution"] = (grouped["Weight"] * grouped["Return"]) / 100.0
-
-    out = grouped[["Category", "Weight", "Return", "Contribution"]].rename(columns={"Category": "Particular"})
+    total_contrib = out["Contribution"].sum()
     total_row = pd.DataFrame(
         [
             {
                 "Particular": "Total",
                 "Weight": out["Weight"].sum(),
-                "Return": out["Contribution"].sum(),
-                "Contribution": out["Contribution"].sum(),
+                "Return": total_contrib,
+                "Contribution": total_contrib,
             }
         ]
     )
@@ -396,19 +425,29 @@ def load_mcap_allocation(file_path):
     return out.sort_values("Stock_Count", ascending=False)
 
 
-def fetch_current_nav_values_from_df(nav_df, port_ret, benchmark_ret):
+def fetch_current_nav_values_from_df(nav_df):
     if nav_df.empty:
-        return 100.0, 100.0
-    last_port_nav = float(nav_df.iloc[-1]["PORT NAV"])
-    last_bm_nav = float(nav_df.iloc[-1]["BM NAV"])
-    current_nav = last_port_nav * (1 + (port_ret / 100))
-    current_bm_nav = last_bm_nav * (1 + (benchmark_ret / 100))
-    return current_nav, current_bm_nav
-
-
-def calculate_trailing_return(nav_df, days, current_nav, current_bm_nav):
+        return 100.0, 100.0, pd.Timestamp.today().normalize()
+    
     today = pd.Timestamp.today().normalize()
-    target_date = today - pd.Timedelta(days=days)
+    today_data = nav_df[nav_df["DATE"].dt.normalize() == today]
+    
+    if not today_data.empty:
+        row = today_data.iloc[-1]
+    else:
+        past_data = nav_df[nav_df["DATE"].dt.normalize() <= today]
+        if not past_data.empty:
+            row = past_data.iloc[-1]
+        else:
+            row = nav_df.iloc[-1]
+            
+    return float(row["PORT NAV"]), float(row["BM NAV"]), row["DATE"]
+
+
+def calculate_trailing_return(nav_df, days, current_nav, current_bm_nav, current_date):
+    if pd.isna(current_date):
+        return None
+    target_date = current_date - pd.Timedelta(days=days)
     historical_rows = nav_df[nav_df["DATE"] <= target_date]
     if historical_rows.empty:
         return None
@@ -421,17 +460,33 @@ def calculate_trailing_return(nav_df, days, current_nav, current_bm_nav):
 
     portfolio_return = ((current_nav - historical_port_nav) / historical_port_nav) * 100
     benchmark_return = ((current_bm_nav - historical_bm_nav) / historical_bm_nav) * 100
+    start_date = selected_row["DATE"]
+    
     return {
         "Period": f"{days}D" if days != 90 else "3M",
+        "Start Date": start_date.strftime("%d-%b-%y") if pd.notna(start_date) else "—",
+        "End Date": current_date.strftime("%d-%b-%y"),
         "Portfolio Return": round(portfolio_return, 2),
         "Benchmark Return": round(benchmark_return, 2),
         "Alpha": round(portfolio_return - benchmark_return, 2),
     }
 
 
-def calculate_since_inception(current_nav, current_bm_nav):
+def calculate_since_inception(nav_df, current_nav, current_bm_nav, current_date):
+    start_date = "—"
+    end_date_str = "—"
+    if pd.notna(current_date):
+        end_date_str = current_date.strftime("%d-%b-%y")
+    if not nav_df.empty:
+        first_row = nav_df.iloc[0]
+        st_dt = first_row["DATE"]
+        if pd.notna(st_dt):
+            start_date = st_dt.strftime("%d-%b-%y")
+            
     return {
         "Period": "Since Inception",
+        "Start Date": start_date,
+        "End Date": end_date_str,
         "Portfolio Return": round(current_nav - 100, 2),
         "Benchmark Return": round(current_bm_nav - 100, 2),
         "Alpha": round((current_nav - 100) - (current_bm_nav - 100), 2),
@@ -440,6 +495,7 @@ def calculate_since_inception(current_nav, current_bm_nav):
 
 def fetch_ltp_truedata(ticker_list: list) -> dict:
     ltp_map = {}
+
     try:
         from truedata_ws.websocket.TD import TD
     except ImportError:
@@ -449,29 +505,55 @@ def fetch_ltp_truedata(ticker_list: list) -> dict:
     td = None
     try:
         td = TD(TRUEDATA_USERNAME, TRUEDATA_PASSWORD, live_port=None)
-        progress = st.progress(0, text="Fetching live prices...")
+
+        progress = st.progress(0, text="Fetching latest prices...")
         total = len(ticker_list)
 
         for i, ticker in enumerate(ticker_list):
             try:
-                data = td.get_n_historical_bars(ticker, no_of_bars=1, bar_size="tick")
-                if data:
-                    last = data[-1]
-                    ltp = last.get("ltp") or last.get("close") or last.get("Close")
-                    if ltp is not None:
-                        ltp_map[ticker.upper()] = float(ltp)
+                ticker = ticker.upper()
+
+                # ✅ STEP 1: Get latest tick (LTP)
+                tick_data = td.get_n_historical_bars(
+                    ticker, no_of_bars=1, bar_size="tick"
+                )
+
+                ltp = None
+                if tick_data:
+                    last_tick = tick_data[-1]
+                    ltp = (
+                        last_tick.get("ltp")
+                        or last_tick.get("close")
+                        or last_tick.get("Close")
+                    )
+
+                # ❗ FALLBACK (VERY IMPORTANT)
+                # If tick fails → use latest intraday/EOD
+                if ltp is None:
+                    eod_data = td.get_n_historical_bars(
+                        ticker, no_of_bars=1, bar_size="EOD"
+                    )
+                    if eod_data:
+                        ltp = eod_data[-1].get("close")
+
+                if ltp is not None:
+                    ltp_map[ticker] = float(ltp)
+
             except Exception:
-                pass
-            progress.progress((i + 1) / total, text=f"Fetched {i + 1}/{total}: {ticker}")
+                continue
+
+            progress.progress((i + 1) / total)
 
         progress.empty()
+
     except Exception as e:
         st.error(f"❌ TrueData connection error: {e}")
+
     finally:
         try:
             if td:
                 td.disconnect()
-        except Exception:
+        except:
             pass
 
     return ltp_map
@@ -574,7 +656,7 @@ def fetch_benchmark_return_truedata() -> dict:
         td = TD(TRUEDATA_USERNAME, TRUEDATA_PASSWORD, live_port=None)
         for sym in symbols_to_try:
             try:
-                tick = td.get_n_historical_bars(sym, no_of_bars=1, bar_size="tick")
+                tick = td.get_n_historical_bars(sym, no_of_bars=1, bar_size="EOD")
                 eod = td.get_n_historical_bars(sym, no_of_bars=2, bar_size="EOD")
                 curr_price = _close(tick[-1]) if tick else None
 
@@ -634,11 +716,10 @@ def refresh_benchmark_if_due(force: bool = False):
 
 
 def compute_portfolio_return_from_table(daily_table) -> float:
-    if daily_table is None or daily_table.empty:
+    contrib_df = build_daily_contribution_table(daily_table)
+    if contrib_df is None or contrib_df.empty:
         return 0.0
-    total_cur = pd.to_numeric(daily_table["Current Value"], errors="coerce").fillna(0).sum()
-    total_prev = pd.to_numeric(daily_table["Yesterday Buy/Hold"], errors="coerce").fillna(0).sum()
-    return (total_cur - total_prev) / total_prev * 100 if total_prev != 0 else 0.0
+    return float(contrib_df.iloc[-1]["Contribution"])
 
 
 def update_daily_table_with_ltp(active_holdings, ltp_map):
@@ -647,12 +728,21 @@ def update_daily_table_with_ltp(active_holdings, ltp_map):
         ticker = str(row["Ticker"]).upper()
         ltp = ltp_map.get(ticker)
         if ltp is not None:
-            yest_val = row["Yesterday Buy/Hold"]
-            yest_close = row["Yesterday Close"]
-            pct = ((ltp - yest_close) / yest_close * 100) if pd.notna(yest_close) and yest_close != 0 else 0.0
-            updated.at[idx, "Current Value"] = round(yest_val * (1 + pct / 100), 4)
+            # We compare Live Price vs the "Today" price from the static table
+            ref_close = row.get("Ref_Close", row["Current Price"])
+            ref_val   = row.get("Ref_Val", row["Current Value"])
+            
+            # Live change relative to the last close in file
+            live_pct = ((ltp - ref_close) / ref_close * 100) if ref_close != 0 else 0.0
+            
+            # Update Current Price and Current Value
             updated.at[idx, "Current Price"] = ltp
-            updated.at[idx, "% Change"] = round(pct, 2)
+            updated.at[idx, "Current Value"] = round(ref_val * (1 + live_pct / 100), 4)
+            
+            # The displayed % Change should be the total change from Yesterday (in file) to Live
+            yest_close = row["Yesterday Close"]
+            total_pct = ((ltp - yest_close) / yest_close * 100) if yest_close != 0 else 0.0
+            updated.at[idx, "% Change"] = round(total_pct, 2)
 
     st.session_state.daily_table = updated
     st.session_state.last_refreshed = datetime.now().strftime("%d %b %Y  %H:%M:%S")
@@ -681,6 +771,8 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🔄 Reload Data"):
         st.cache_data.clear()
+        if "daily_table" in st.session_state:
+            del st.session_state["daily_table"]
         st.rerun()
 
 # ─────────────────────────────────────────────
@@ -696,7 +788,7 @@ with st.spinner("Initializing Dashboard..."):
     active_holdings = trades[trades["Is_Active"]].copy()
 
     if "daily_table" not in st.session_state:
-        st.session_state.daily_table = build_daily_table(active_holdings, daily_snapshot)
+        st.session_state.daily_table = build_daily_table(active_holdings, raw_df)
     if "last_refreshed" not in st.session_state:
         st.session_state.last_refreshed = None
 
@@ -720,7 +812,7 @@ st.markdown("<div class='main-header'>Finance Returns Dashboard</div>", unsafe_a
 # 🏠 OVERVIEW SECTION
 # ─────────────────────────────────────────────
 if "Overview" in menu:
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3 = st.columns(3)
 
     with m1:
         st.markdown(
@@ -758,18 +850,6 @@ if "Overview" in menu:
             unsafe_allow_html=True,
         )
 
-    with m4:
-        st.markdown(
-            f"""
-            <div class='glass-card'>
-                <p class='metric-title'>LAST UPDATED</p>
-                <p class='metric-value' style='font-size:1.2rem'>
-                    {last_date.strftime('%d %b %y')}
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
 
     btn_col, ts_col = st.columns([1, 4])
     with btn_col:
@@ -851,7 +931,7 @@ if "Overview" in menu:
         st.markdown("</div>", unsafe_allow_html=True)
 
     with c2:
-        st.markdown("<div class='glass-card'><h3>📌 Daily Contribution</h3>", unsafe_allow_html=True)
+        st.markdown("<div class='glass-card' style='height: 100%;'><h3>📌 Daily Contribution</h3>", unsafe_allow_html=True)
         contrib_df = build_daily_contribution_table(st.session_state.daily_table)
         if contrib_df is not None:
             contrib_disp = contrib_df.copy()
@@ -914,9 +994,7 @@ elif "Performance History" in menu:
     calendar_df = compute_calendar_returns(nav_df)
 
     # Compute live current NAVs using today's portfolio & benchmark returns
-    current_nav, current_bm_nav = fetch_current_nav_values_from_df(
-        nav_df, port_ret, benchmark_ret
-    )
+    current_nav, current_bm_nav, _ = fetch_current_nav_values_from_df(nav_df)
 
     current_month_str = pd.Timestamp.today().strftime("%b-%y")
 
@@ -979,9 +1057,26 @@ elif "Performance History" in menu:
 elif "Detailed Tickers" in menu:
     st.markdown("<div class='glass-card'><h3>📋 Detailed Ticker Performance</h3>", unsafe_allow_html=True)
     styled = st.session_state.daily_table.copy()
-    for col in ["Yesterday Buy/Hold", "Yesterday Close", "Current Price", "Current Value"]:
+    
+    # Reorder and rename columns for better flow
+    display_map = {
+        "Ticker": "TICKER",
+        "Yesterday Buy/Hold": "YESTERDAY VALUE",
+        "Yesterday Close": "YESTERDAY CLOSE",
+        "Current Price": "CURRENT PRICE",
+        "% Change": "% CHANGE",
+        "Current Value": "CURRENT VALUE"
+    }
+    
+    # Keep only columns we want to show
+    cols_to_show = ["Ticker", "Yesterday Buy/Hold", "Yesterday Close", "Current Price", "% Change", "Current Value"]
+    styled = styled[cols_to_show].rename(columns=display_map)
+
+    for col in ["YESTERDAY VALUE", "YESTERDAY CLOSE", "CURRENT PRICE", "CURRENT VALUE"]:
         styled[col] = styled[col].apply(fmt_inr)
-    styled["% Change"] = styled["% Change"].apply(colour_pct_val)
+    
+    styled["% CHANGE"] = styled["% CHANGE"].apply(colour_pct_val)
+    
     st.write(styled.to_html(escape=False, index=False, classes="custom-table"), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -991,16 +1086,23 @@ elif "Detailed Tickers" in menu:
 elif "Trailing Returns" in menu:
     st.markdown("<div class='glass-card'><h3>📊 Trailing Returns Snapshot</h3>", unsafe_allow_html=True)
     try:
-        current_nav, current_bm_nav = fetch_current_nav_values_from_df(nav_df, port_ret, benchmark_ret)
+        current_nav, current_bm_nav, current_date = fetch_current_nav_values_from_df(nav_df)
 
         nav_col1, nav_col2 = st.columns(2)
         nav_col1.metric("Current Portfolio NAV", f"{current_nav:.2f}")
         nav_col2.metric("Current Benchmark NAV", f"{current_bm_nav:.2f}")
 
         st.markdown("<br><h4>Trailing Returns</h4>", unsafe_allow_html=True)
+        
+        end_date_str = current_date.strftime("%d-%b-%y") if pd.notna(current_date) else "—"
+        one_day_ago_rows = nav_df[nav_df["DATE"] < current_date]
+        one_day_start = one_day_ago_rows.iloc[-1]["DATE"].strftime("%d-%b-%y") if not one_day_ago_rows.empty else "—"
+
         trailing_results = [
             {
                 "Period": "1D",
+                "Start Date": one_day_start,
+                "End Date": end_date_str,
                 "Portfolio Return": round(port_ret, 2),
                 "Benchmark Return": round(benchmark_ret, 2),
                 "Alpha": round(alpha, 2),
@@ -1008,11 +1110,11 @@ elif "Trailing Returns" in menu:
         ]
 
         for period in [7, 15, 30, 90]:
-            result = calculate_trailing_return(nav_df, period, current_nav, current_bm_nav)
+            result = calculate_trailing_return(nav_df, period, current_nav, current_bm_nav, current_date)
             if result:
                 trailing_results.append(result)
 
-        trailing_results.append(calculate_since_inception(current_nav, current_bm_nav))
+        trailing_results.append(calculate_since_inception(nav_df, current_nav, current_bm_nav, current_date))
 
         trailing_df = pd.DataFrame(trailing_results)
         styled_trail = trailing_df.style.format({"Portfolio Return": "{:+.2f}%", "Benchmark Return": "{:+.2f}%", "Alpha": "{:+.2f}%"})

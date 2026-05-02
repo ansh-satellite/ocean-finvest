@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Streamlit secrets
+.streamlit/secrets.toml
+secrets.toml
+
+# Data and Logs
+*.log
+run_log.txt
+failed_tickers_log.txt
+
+# OS
+.DS_Store
+Thumbs.db
