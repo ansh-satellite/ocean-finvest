@@ -714,15 +714,15 @@ def benchmark_refresh_due() -> bool:
     if "benchmark_data" not in st.session_state:
         return True
     last_fetch = st.session_state.get("benchmark_last_fetched")
-    return last_fetch is None or datetime.now() - last_fetch >= timedelta(minutes=BENCHMARK_REFRESH_MINUTES)
+    # Both must be aware (UTC)
+    return last_fetch is None or datetime.now(timezone.utc) - last_fetch >= timedelta(minutes=BENCHMARK_REFRESH_MINUTES)
 
 
 def refresh_benchmark_if_due(force: bool = False):
     if force or benchmark_refresh_due():
         with st.spinner("Fetching BSE 500 benchmark..."):
             st.session_state.benchmark_data = fetch_benchmark_return_truedata()
-            ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
-            st.session_state.benchmark_last_fetched = ist_now
+            st.session_state.benchmark_last_fetched = datetime.now(timezone.utc)
 
 
 def compute_portfolio_return_from_table(daily_table) -> float:
@@ -931,7 +931,13 @@ if "Overview" in menu:
             """,
             unsafe_allow_html=True,
         )
-        fetched_label = bm.get("fetched_at", "—")
+        last_fetched_dt = st.session_state.get("benchmark_last_fetched")
+        if last_fetched_dt:
+            ist_fetched = last_fetched_dt + timedelta(hours=5, minutes=30)
+            fetched_label = ist_fetched.strftime("%d %b %Y  %H:%M:%S")
+        else:
+            fetched_label = "—"
+            
         st.markdown(
             f"<p style='color:#555;font-size:12px;margin-top:10px;'>Benchmark auto-refreshes every {BENCHMARK_REFRESH_MINUTES} mins. Last fetch: {fetched_label}</p>",
             unsafe_allow_html=True,
