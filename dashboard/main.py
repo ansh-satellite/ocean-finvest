@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -721,7 +721,8 @@ def refresh_benchmark_if_due(force: bool = False):
     if force or benchmark_refresh_due():
         with st.spinner("Fetching BSE 500 benchmark..."):
             st.session_state.benchmark_data = fetch_benchmark_return_truedata()
-            st.session_state.benchmark_last_fetched = datetime.now()
+            ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+            st.session_state.benchmark_last_fetched = ist_now
 
 
 def compute_portfolio_return_from_table(daily_table) -> float:
@@ -754,7 +755,8 @@ def update_daily_table_with_ltp(active_holdings, ltp_map):
             updated.at[idx, "% Change"] = round(total_pct, 2)
 
     st.session_state.daily_table = updated
-    st.session_state.last_refreshed = datetime.now().strftime("%d %b %Y  %H:%M:%S")
+    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    st.session_state.last_refreshed = ist_now.strftime("%d %b %Y  %H:%M:%S")
     return updated
 
 
