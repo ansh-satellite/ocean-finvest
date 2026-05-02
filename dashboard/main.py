@@ -594,108 +594,43 @@ def build_monthly_performance(file_path):
     df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").round(2)
     df["Return %"] = pd.to_numeric(df["Return %"], errors="coerce").round(2)
     return df
-    
-def build_monthly_performance(file_path):
-    """
-    Monthly performance should always stay inside the month boundary.
 
-    Logic:
-    1. Take only current month's rows.
-    2. Ignore any next month's prices.
-    3. Use latest available price ONLY within that month.
-    4. Freeze that month once the next month starts.
-    """
 
-    if not os.path.exists(file_path):
+def build_monthly_asset_contribution_table(df, portfolio_return_override=None):
+    if df is None or df.empty:
         return None
 
-    # Read file
-    df = pd.read_excel(file_path)
-    df.columns = df.columns.str.strip()
-
-    # Expected columns:
-    # Ticker | Start Price | Date | Close
     ticker_col = df.columns[0]
-    start_price_col = df.columns[1]
+    equity_df = df[~df[ticker_col].isin(["GOLDBEES", "LIQUIDCASE"])]
+    gold_df = df[df[ticker_col] == "GOLDBEES"]
+    liquid_df = df[df[ticker_col] == "LIQUIDCASE"]
 
-    # Normalize tickers
-    df[ticker_col] = (
-        df[ticker_col]
-        .astype(str)
-        .str.upper()
-        .str.strip()
-        .str.replace(".NS", "", regex=False)
-        .str.replace("-EQ", "", regex=False)
+    equity_return = equity_df["Return %"].mean() if not equity_df.empty else 0
+    gold_return = gold_df["Return %"].mean() if not gold_df.empty else 0
+    liquid_return = liquid_df["Return %"].mean() if not liquid_df.empty else 0
+
+    asset_df = pd.DataFrame(
+        {
+            "Particular": ["Equity", "Gold", "Liquidcase"],
+            "Weight": [75.00, 10.00, 15.00],
+            "% Returns": [round(equity_return, 2), round(gold_return, 2), round(liquid_return, 2)],
+        }
     )
+    asset_df["Contribution"] = ((asset_df["Weight"] * asset_df["% Returns"]) / 100).round(2)
 
-    # Date column mandatory
-    if "Date" not in df.columns:
-        st.error("Monthly Performance file must contain a 'Date' column.")
-        return None
+    # Use override if provided, otherwise sum contributions
+    total_val = portfolio_return_override if portfolio_return_override is not None else asset_df["Contribution"].sum()
 
-    if "Close" not in df.columns:
-        st.error("Monthly Performance file must contain a 'Close' column.")
-        return None
+    total_row = pd.DataFrame(
+        {
+            "Particular": ["Total"],
+            "Weight": [asset_df["Weight"].sum()],
+            "% Returns": [total_val],
+            "Contribution": [total_val],
+        }
+    )
+    return pd.concat([asset_df, total_row], ignore_index=True)
 
-    # Convert date column
-    df["Date"] = pd.to_datetime(df["Date"])
-
-    # Current system date
-    today = pd.Timestamp.today().normalize()
-    current_month = today.month
-    current_year = today.year
-
-    # Filter strictly for current month only
-    current_month_df = df[
-        (df["Date"].dt.month == current_month) &
-        (df["Date"].dt.year == current_year)
-    ].copy()
-
-    # If current month data not available
-    if current_month_df.empty:
-        st.warning("No current month data available.")
-        return None
-
-    # Last available date inside current month only
-    month_last_date = current_month_df["Date"].max()
-
-    # Freeze at latest available date of current month
-    latest_df = current_month_df[
-        current_month_df["Date"] == month_last_date
-    ].copy()
-
-    # Use month-end/latest available close as current price
-    latest_df["Current Price"] = latest_df["Close"]
-
-    # Monthly return calculation
-    latest_df["Return %"] = (
-        (latest_df["Current Price"] - latest_df[start_price_col])
-        / latest_df[start_price_col]
-    ) * 100
-
-    # Formatting
-    latest_df[start_price_col] = pd.to_numeric(
-        latest_df[start_price_col],
-        errors="coerce"
-    ).round(2)
-
-    latest_df["Current Price"] = pd.to_numeric(
-        latest_df["Current Price"],
-        errors="coerce"
-    ).round(2)
-
-    latest_df["Return %"] = pd.to_numeric(
-        latest_df["Return %"],
-        errors="coerce"
-    ).round(2)
-
-    # Sort by return descending (optional)
-    latest_df = latest_df.sort_values(
-        "Return %",
-        ascending=False
-    ).reset_index(drop=True)
-
-    return latest_df
 
 
 def fetch_benchmark_return_truedata() -> dict:
