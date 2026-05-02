@@ -10,10 +10,31 @@ def compute_calendar_returns(df: pd.DataFrame):
     # Create YearMonth
     df["YearMonth"] = df["DATE"].dt.to_period("M")
 
-    # Use all available months in the data
-    all_months = sorted(df["YearMonth"].unique())
-    # Take up to last 7 months to get 6 return rows
-    months = all_months[-7:] if len(all_months) > 7 else all_months
+    today = pd.Timestamp.today()
+    current_month = today.to_period("M")
+
+    # 🔥 STEP 1: Check if current month is complete
+    current_data = df[df["YearMonth"] == current_month]
+
+    if not current_data.empty:
+        last_date = current_data["DATE"].max()
+        month_end = last_date.to_period("M").to_timestamp("M")
+
+        # If incomplete → shift to previous month
+        if last_date.normalize() != month_end.normalize():
+            effective_month = current_month - 1
+        else:
+            effective_month = current_month
+    else:
+        effective_month = current_month - 1
+
+    # 🔥 STEP 2: Decide window size
+    if effective_month == current_month:
+        # 6 returns
+        months = [effective_month - i for i in range(6, -1, -1)]
+    else:
+        # 5 returns
+        months = [effective_month - i for i in range(5, -1, -1)]
 
     rows = []
 
@@ -26,12 +47,15 @@ def compute_calendar_returns(df: pd.DataFrame):
 
         # Determine Start NAVs
         if not prev_data.empty:
+            # Standard case: Use last day of previous month
             start_port = prev_data["PORT NAV"].iloc[-1]
             start_bm = prev_data["BM NAV"].iloc[-1]
         elif ym == df["YearMonth"].min():
+            # First month in dataset: Use the first ever available value
             start_port = df["PORT NAV"].iloc[0]
             start_bm = df["BM NAV"].iloc[0]
         else:
+            # Gaps in data: Skip
             continue
 
         end_port = current_data["PORT NAV"].iloc[-1]

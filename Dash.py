@@ -13,17 +13,12 @@ from truedata_ws.websocket.TD import TD
 # ─────────────────────────────────────────────
 # Use relative paths for portability
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-NAV_FILE_PATH  = os.path.join(DATA_DIR, "NAV.xlsx")
-DATA_PATH      = os.path.join(DATA_DIR, "Momentum_Maxfolio.xlsx")
+NAV_FILE_PATH  = os.path.join(BASE_DIR, "NAV.xlsx")
+DATA_PATH      = os.path.join(BASE_DIR, "MOMENTUM_DB_2 copy", "Momentum_Maxfolio.xlsx")
 REFRESH_MINUTES = 15
 
-try:
-    TD_USERNAME = st.secrets["truedata"]["username"]
-    TD_PASSWORD = st.secrets["truedata"]["password"]
-except Exception:
-    TD_USERNAME = "tdwsf695"
-    TD_PASSWORD = "ocean@695"
+TD_USERNAME = st.secrets.get("TRUEDATA_USERNAME", "tdwsf695")
+TD_PASSWORD = st.secrets.get("TRUEDATA_PASSWORD", "ocean@695")
 
 st.set_page_config(page_title="NAV Dashboard", page_icon="📊", layout="wide")
 
@@ -111,36 +106,22 @@ def calculate_nav(df, base_nav):
 # =========================================================
 # 🔥 BENCHMARK LOGIC
 # =========================================================
-import requests
-
-def is_truedata_up():
-    try:
-        requests.get("https://auth.truedata.in", timeout=2)
-        return True
-    except Exception:
-        return False
-
 @st.cache_data(ttl=REFRESH_MINUTES * 60)
 def get_benchmark_values():
 
     symbol = "BSE500"
-    
+    td = TD(TD_USERNAME, TD_PASSWORD, live_port=None, historical_api=True)
+
     today = pd.Timestamp.today().normalize()
     current_month = today.to_period("M")
     prev_month = current_month - 1
-    
+
     df = None
-    if is_truedata_up():
-        try:
-            td = TD(TD_USERNAME, TD_PASSWORD, live_port=None, historical_api=True)
-            hist = td.get_historic_data(symbol, duration="2 M", bar_size="eod")
-            df = pd.DataFrame(hist)
-            try:
-                td.disconnect()
-            except:
-                pass
-        except Exception:
-            df = None
+    try:
+        hist = td.get_historic_data(symbol, duration="2 M", bar_size="eod")
+        df = pd.DataFrame(hist)
+    except Exception:
+        df = None
 
     if df is None or df.empty:
         return None, None, None, None

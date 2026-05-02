@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -13,25 +13,17 @@ from nav_updater import compute_calendar_returns
 # ─────────────────────────────────────────────
 # Credentials & Paths
 # ─────────────────────────────────────────────
-try:
-    TRUEDATA_USERNAME = st.secrets["truedata"]["username"]
-    TRUEDATA_PASSWORD = st.secrets["truedata"]["password"]
-except Exception:
-    # Fallback for local testing if secrets.toml is not in .streamlit
-    TRUEDATA_USERNAME = "tdwsf695"
-    TRUEDATA_PASSWORD = "ocean@695"
+TRUEDATA_USERNAME = "tdwsf695"
+TRUEDATA_PASSWORD = "ocean@695"
 
 # Use relative paths for portability
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-
-DATA_PATH = os.path.join(DATA_DIR, "Nifty_500_2025_apr_20_stocks_results_goldsilverdebt_buyhold_returns.xlsx")
-DATA_PATH_Final = os.path.join(DATA_DIR, "Momentum_Maxfolio.xlsx")
-SECTOR_ALLOCATION_PATH = os.path.join(DATA_DIR, "Sectorwise_equity_allocation.xlsx")
-ASSET_ALLOCATION_PATH = os.path.join(DATA_DIR, "stocks_with_sectors.xlsx")
-MCAP_ALLOCATION_PATH = os.path.join(DATA_DIR, "mcap_wise_stock_allocation.xlsx")
-MONTHLY_DATA_PATH = os.path.join(DATA_DIR, "april_stocks.xlsx")
+DATA_PATH = os.path.join(BASE_DIR, "MOMENTUM_DB_2 copy", "Trials", "Nifty_500_2025_apr_20_stocks_results_goldsilverdebt_buyhold_returns.xlsx")
+DATA_PATH_Final = os.path.join(BASE_DIR,"Momentum_Maxfolio.xlsx")
+SECTOR_ALLOCATION_PATH = os.path.join(BASE_DIR, "Sectorwise_equity_allocation.xlsx")
+ASSET_ALLOCATION_PATH = os.path.join(BASE_DIR, "stocks_with_sectors.xlsx")
+MCAP_ALLOCATION_PATH = os.path.join(BASE_DIR, "mcap_wise_stock_allocation.xlsx")
+MONTHLY_DATA_PATH = os.path.join(BASE_DIR, "april_stocks.xlsx")
 BENCHMARK_REFRESH_MINUTES = 15
 
 # ─────────────────────────────────────────────
@@ -243,8 +235,7 @@ def load_and_process_data(file_path):
 
 def build_daily_table(active_holdings, price_history_df):
     rows = []
-    # Use DATA_PATH_Final which points to Momentum_Maxfolio.xlsx in data/
-    maxfolio_path = DATA_PATH_Final
+    maxfolio_path = os.path.join(BASE_DIR, "Momentum_Maxfolio.xlsx")
     maxfolio_df = None
     if os.path.exists(maxfolio_path):
         try:
@@ -275,49 +266,35 @@ def build_daily_table(active_holdings, price_history_df):
         if source_df is None or source_df.empty:
             continue
 
+        # ── Find previous available date (strictly before today) ────────
         available_dates = sorted(source_df["Date"].dt.normalize().unique())
-        
-        if not available_dates:
-            continue
+        prev_dates = [d for d in available_dates if d < today]
 
-        # ── Determine Today and Yesterday dates ─────────────────────────
-        if today in available_dates:
-            today_idx = available_dates.index(today)
-            today_dt = today
-            # If today is the first date, yesterday is also today
-            yesterday_dt = available_dates[today_idx - 1] if today_idx > 0 else today
+        if not prev_dates:
+            prev_date = min(available_dates)
         else:
-            # Last available is "Today", second-to-last is "Yesterday"
-            today_dt = available_dates[-1]
-            yesterday_dt = available_dates[-2] if len(available_dates) > 1 else available_dates[-1]
+            prev_date = max(prev_dates)
 
-        # Get the actual data rows
-        today_snap = source_df[source_df["Date"].dt.normalize() == today_dt]
-        yest_snap  = source_df[source_df["Date"].dt.normalize() == yesterday_dt]
+        # ── Today's row (if present) else use last available ────────────
+        today_snap = source_df[source_df["Date"].dt.normalize() == today]
+        prev_snap  = source_df[source_df["Date"].dt.normalize() == prev_date]
 
-        if today_snap.empty or yest_snap.empty:
-            continue
+        yest_row   = prev_snap.iloc[-1]  if not prev_snap.empty  else source_df.iloc[0]
+        today_row  = today_snap.iloc[-1] if not today_snap.empty else source_df.iloc[-1]
 
-        t_row = today_snap.iloc[-1]
-        y_row = yest_snap.iloc[-1]
+        yest_close = yest_row["Close"]
+        yest_val   = yest_row["Buy_Hold_Value"]
+        curr_price = today_row["Close"]
 
-        y_close = float(y_row["Close"])
-        y_val   = float(y_row["Buy_Hold_Value"])
-        t_close = float(t_row["Close"])
-        t_val   = float(t_row["Buy_Hold_Value"]) # Use the actual value from the file for "today"
-
-        # Calculate % Change from Yesterday Close to Today Close
-        change_pct = ((t_close - y_close) / y_close * 100) if y_close != 0 else 0.0
+        pct = ((curr_price - yest_close) / yest_close * 100) if yest_close != 0 else 0.0
 
         rows.append({
             "Ticker":              ticker,
-            "Yesterday Buy/Hold":  y_val,
-            "Yesterday Close":     y_close,
-            "Current Price":       t_close,
-            "Ref_Close":           t_close,    # Reference for live refresh
-            "Ref_Val":             t_val,      # Reference for live refresh
-            "% Change":            round(change_pct, 2),
-            "Current Value":       t_val,
+            "Yesterday Buy/Hold":  yest_val,
+            "Yesterday Close":     yest_close,
+            "Current Price":       curr_price,
+            "% Change":            pct,
+            "Current Value":       yest_val * (1 + pct / 100),
         })
 
     return pd.DataFrame(rows)
@@ -570,10 +547,11 @@ def fetch_ltp_truedata(ticker_list: list) -> dict:
 
 def build_monthly_performance(file_path):
     if not os.path.exists(file_path):
-        return None
+        return None, None
 
     df = pd.read_excel(file_path)
     df.columns = df.columns.str.strip()
+
     ticker_col = df.columns[0]
     start_price_col = df.columns[1]
 
@@ -586,116 +564,78 @@ def build_monthly_performance(file_path):
         .str.replace("-EQ", "", regex=False)
     )
 
-    tickers = df[ticker_col].tolist()
-    live_prices = fetch_ltp_truedata(tickers)
-    df["Current Price"] = df[ticker_col].map(live_prices)
-    df["Return %"] = ((df["Current Price"] - df[start_price_col]) / df[start_price_col]) * 100
-    df[start_price_col] = pd.to_numeric(df[start_price_col], errors="coerce").round(2)
-    df["Current Price"] = pd.to_numeric(df["Current Price"], errors="coerce").round(2)
-    df["Return %"] = pd.to_numeric(df["Return %"], errors="coerce").round(2)
-    return df
-    
-def build_monthly_performance(file_path):
-    """
-    Monthly performance should always stay inside the month boundary.
+    if "Date" not in df.columns or "Close" not in df.columns:
+        return None, None
 
-    Logic:
-    1. Take only current month's rows.
-    2. Ignore any next month's prices.
-    3. Use latest available price ONLY within that month.
-    4. Freeze that month once the next month starts.
-    """
-
-    if not os.path.exists(file_path):
-        return None
-
-    # Read file
-    df = pd.read_excel(file_path)
-    df.columns = df.columns.str.strip()
-
-    # Expected columns:
-    # Ticker | Start Price | Date | Close
-    ticker_col = df.columns[0]
-    start_price_col = df.columns[1]
-
-    # Normalize tickers
-    df[ticker_col] = (
-        df[ticker_col]
-        .astype(str)
-        .str.upper()
-        .str.strip()
-        .str.replace(".NS", "", regex=False)
-        .str.replace("-EQ", "", regex=False)
-    )
-
-    # Date column mandatory
-    if "Date" not in df.columns:
-        st.error("Monthly Performance file must contain a 'Date' column.")
-        return None
-
-    if "Close" not in df.columns:
-        st.error("Monthly Performance file must contain a 'Close' column.")
-        return None
-
-    # Convert date column
     df["Date"] = pd.to_datetime(df["Date"])
-
-    # Current system date
     today = pd.Timestamp.today().normalize()
-    current_month = today.month
-    current_year = today.year
-
-    # Filter strictly for current month only
+    
     current_month_df = df[
-        (df["Date"].dt.month == current_month) &
-        (df["Date"].dt.year == current_year)
+        (df["Date"].dt.month == today.month) &
+        (df["Date"].dt.year == today.year)
     ].copy()
-
-    # If current month data not available
+    
     if current_month_df.empty:
-        st.warning("No current month data available.")
-        return None
+        if not df.empty:
+            last_date = df["Date"].max()
+            current_month_df = df[
+                (df["Date"].dt.month == last_date.month) &
+                (df["Date"].dt.year == last_date.year)
+            ].copy()
+        else:
+            return None, None
 
-    # Last available date inside current month only
     month_last_date = current_month_df["Date"].max()
-
-    # Freeze at latest available date of current month
-    latest_df = current_month_df[
-        current_month_df["Date"] == month_last_date
-    ].copy()
-
-    # Use month-end/latest available close as current price
+    latest_df = current_month_df[current_month_df["Date"] == month_last_date].copy()
     latest_df["Current Price"] = latest_df["Close"]
 
-    # Monthly return calculation
     latest_df["Return %"] = (
         (latest_df["Current Price"] - latest_df[start_price_col])
         / latest_df[start_price_col]
     ) * 100
 
-    # Formatting
-    latest_df[start_price_col] = pd.to_numeric(
-        latest_df[start_price_col],
-        errors="coerce"
-    ).round(2)
+    latest_df[start_price_col] = pd.to_numeric(latest_df[start_price_col], errors="coerce").round(2)
+    latest_df["Current Price"] = pd.to_numeric(latest_df["Current Price"], errors="coerce").round(2)
+    latest_df["Return %"] = pd.to_numeric(latest_df["Return %"], errors="coerce").round(2)
 
-    latest_df["Current Price"] = pd.to_numeric(
-        latest_df["Current Price"],
-        errors="coerce"
-    ).round(2)
+    latest_df = latest_df.sort_values("Return %", ascending=False).reset_index(drop=True)
+    return latest_df, month_last_date
 
-    latest_df["Return %"] = pd.to_numeric(
-        latest_df["Return %"],
-        errors="coerce"
-    ).round(2)
 
-    # Sort by return descending (optional)
-    latest_df = latest_df.sort_values(
-        "Return %",
-        ascending=False
-    ).reset_index(drop=True)
+def build_monthly_asset_contribution_table(monthly_performance_df, portfolio_return_override=None):
+    if monthly_performance_df is None or monthly_performance_df.empty:
+        return None
 
-    return latest_df
+    df = monthly_performance_df.copy()
+    ticker_col = df.columns[0]
+    df["Ticker_Key"] = normalize_ticker_key(df[ticker_col])
+    
+    weight_equity = 75.0
+    weight_gold = 10.0
+    weight_liquid = 15.0
+
+    gold_df = df[df["Ticker_Key"].isin(["GOLDBEES", "GOLDBESS"])]
+    liquid_df = df[df["Ticker_Key"].isin(["LIQUIDCASE"])]
+
+    gold_return = gold_df["Return %"].mean() if not gold_df.empty else 0.0
+    liquid_return = liquid_df["Return %"].mean() if not liquid_df.empty else 0.0
+
+    if portfolio_return_override is not None and not pd.isna(portfolio_return_override):
+        target_val = float(portfolio_return_override)
+        equity_return = (target_val / weight_equity) * 100.0
+        contrib_equity = target_val
+    else:
+        equity_df = df[~df["Ticker_Key"].isin(["GOLDBEES", "GOLDBESS", "LIQUIDCASE"])]
+        equity_return = equity_df["Return %"].mean() if not equity_df.empty else 0.0
+        contrib_equity = (weight_equity * equity_return) / 100.0
+
+    asset_df = pd.DataFrame({
+        "Particular": ["Equity", "Gold", "Liquidcase"],
+        "Weight": [weight_equity, weight_gold, weight_liquid],
+        "% Returns": [equity_return, gold_return, liquid_return],
+        "Contribution": [contrib_equity, (weight_gold * gold_return) / 100.0, (weight_liquid * liquid_return) / 100.0]
+    })
+    return asset_df
 
 
 def fetch_benchmark_return_truedata() -> dict:
@@ -783,15 +723,14 @@ def benchmark_refresh_due() -> bool:
     if "benchmark_data" not in st.session_state:
         return True
     last_fetch = st.session_state.get("benchmark_last_fetched")
-    # Both must be aware (UTC)
-    return last_fetch is None or datetime.now(timezone.utc) - last_fetch >= timedelta(minutes=BENCHMARK_REFRESH_MINUTES)
+    return last_fetch is None or datetime.now() - last_fetch >= timedelta(minutes=BENCHMARK_REFRESH_MINUTES)
 
 
 def refresh_benchmark_if_due(force: bool = False):
     if force or benchmark_refresh_due():
         with st.spinner("Fetching BSE 500 benchmark..."):
             st.session_state.benchmark_data = fetch_benchmark_return_truedata()
-            st.session_state.benchmark_last_fetched = datetime.now(timezone.utc)
+            st.session_state.benchmark_last_fetched = datetime.now()
 
 
 def compute_portfolio_return_from_table(daily_table) -> float:
@@ -807,25 +746,15 @@ def update_daily_table_with_ltp(active_holdings, ltp_map):
         ticker = str(row["Ticker"]).upper()
         ltp = ltp_map.get(ticker)
         if ltp is not None:
-            # We compare Live Price vs the "Today" price from the static table
-            ref_close = row.get("Ref_Close", row["Current Price"])
-            ref_val   = row.get("Ref_Val", row["Current Value"])
-            
-            # Live change relative to the last close in file
-            live_pct = ((ltp - ref_close) / ref_close * 100) if ref_close != 0 else 0.0
-            
-            # Update Current Price and Current Value
-            updated.at[idx, "Current Price"] = ltp
-            updated.at[idx, "Current Value"] = round(ref_val * (1 + live_pct / 100), 4)
-            
-            # The displayed % Change should be the total change from Yesterday (in file) to Live
+            yest_val = row["Yesterday Buy/Hold"]
             yest_close = row["Yesterday Close"]
-            total_pct = ((ltp - yest_close) / yest_close * 100) if yest_close != 0 else 0.0
-            updated.at[idx, "% Change"] = round(total_pct, 2)
+            pct = ((ltp - yest_close) / yest_close * 100) if pd.notna(yest_close) and yest_close != 0 else 0.0
+            updated.at[idx, "Current Value"] = round(yest_val * (1 + pct / 100), 4)
+            updated.at[idx, "Current Price"] = ltp
+            updated.at[idx, "% Change"] = round(pct, 2)
 
     st.session_state.daily_table = updated
-    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
-    st.session_state.last_refreshed = ist_now.strftime("%d %b %Y  %H:%M:%S")
+    st.session_state.last_refreshed = datetime.now().strftime("%d %b %Y  %H:%M:%S")
     return updated
 
 
@@ -833,7 +762,7 @@ def update_daily_table_with_ltp(active_holdings, ltp_map):
 # Sidebar Navigation
 # ─────────────────────────────────────────────
 with st.sidebar:
-    st.image(os.path.join(ASSETS_DIR, "cropped-Untitled-design-scaled-1.webp"), use_container_width=True)
+    st.image("cropped-Untitled-design-scaled-1.webp", use_container_width=True)
     st.markdown("### Momentum Pro")
     st.markdown("---")
     menu = st.radio(
@@ -851,8 +780,6 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🔄 Reload Data"):
         st.cache_data.clear()
-        if "daily_table" in st.session_state:
-            del st.session_state["daily_table"]
         st.rerun()
 
 # ─────────────────────────────────────────────
@@ -874,75 +801,8 @@ with st.spinner("Initializing Dashboard..."):
 
     nav_data = get_live_nav_data()
     nav_df = nav_data["nav_df"]
-    
-    # 🔥 AUGMENT NAV_DF WITH LIVE DATA FOR TRAILING & CALENDAR CALCULATIONS
-    live_today = pd.Timestamp.today().normalize()
-    if live_today not in nav_df["DATE"].dt.normalize().values:
-        live_row = pd.DataFrame([{
-            "DATE": live_today,
-            "PORT NAV": nav_data["current_nav"],
-            "BM NAV": nav_data["current_bm_nav"]
-        }])
-        nav_df = pd.concat([nav_df, live_row], ignore_index=True).sort_values("DATE").reset_index(drop=True)
-
-    calendar_df = compute_calendar_returns(nav_df)
-    
-    # Ensure current month is in calendar_df
-    current_nav_val, current_bm_nav_val, _ = fetch_current_nav_values_from_df(nav_df)
-    current_month_str = pd.Timestamp.today().strftime("%b-%y")
-
-    if not calendar_df.empty and "Month" in calendar_df.columns and current_month_str not in calendar_df["Month"].astype(str).values:
-        month_start = pd.Timestamp.today().replace(day=1)
-        prev_month_rows = nav_df[nav_df["DATE"] < month_start]
-        if not prev_month_rows.empty:
-            month_start_row = prev_month_rows.iloc[-1]
-            m_start_port = float(month_start_row["PORT NAV"])
-            m_start_bm = float(month_start_row["BM NAV"])
-            
-            l_month_ret = ((current_nav_val - m_start_port) / m_start_port) * 100
-            l_month_bm_ret = ((current_bm_nav_val - m_start_bm) / m_start_bm) * 100
-            
-            new_row = pd.DataFrame([{
-                "Month": current_month_str,
-                "PORT": round(l_month_ret, 2),
-                "BSE 500": round(l_month_bm_ret, 2),
-                "Alpha": round(l_month_ret - l_month_bm_ret, 2)
-            }])
-            calendar_df = pd.concat([calendar_df, new_row], ignore_index=True)
-
     live_month_return = nav_data.get("return", 0.0)
     live_month_bm_return = nav_data.get("bm_return", 0.0)
-
-def get_latest_calendar_portfolio_return(calendar_df):
-    """
-    Fetch portfolio return from calendar returns.
-
-    Priority:
-    1. Current month PORT return
-    2. Previous available month PORT return (fallback)
-    """
-
-    if calendar_df is None or calendar_df.empty:
-        return 0.0, "No Data"
-
-    current_month = pd.Timestamp.today().strftime("%b-%y")
-
-    calendar_df = calendar_df.copy()
-    calendar_df["Month"] = calendar_df["Month"].astype(str).str.strip()
-
-    # 1. Current month available
-    current_row = calendar_df[calendar_df["Month"] == current_month]
-
-    if not current_row.empty:
-        port_ret = float(current_row.iloc[-1]["PORT"])
-        return port_ret, current_month
-
-    # 2. Fallback → previous available month
-    latest_row = calendar_df.iloc[-1]
-    port_ret = float(latest_row["PORT"])
-    month_used = str(latest_row["Month"])
-
-    return port_ret, month_used
 
 refresh_benchmark_if_due()
 bm = st.session_state.benchmark_data
@@ -1067,13 +927,7 @@ if "Overview" in menu:
             """,
             unsafe_allow_html=True,
         )
-        last_fetched_dt = st.session_state.get("benchmark_last_fetched")
-        if last_fetched_dt:
-            ist_fetched = last_fetched_dt + timedelta(hours=5, minutes=30)
-            fetched_label = ist_fetched.strftime("%d %b %Y  %H:%M:%S")
-        else:
-            fetched_label = "—"
-            
+        fetched_label = bm.get("fetched_at", "—")
         st.markdown(
             f"<p style='color:#555;font-size:12px;margin-top:10px;'>Benchmark auto-refreshes every {BENCHMARK_REFRESH_MINUTES} mins. Last fetch: {fetched_label}</p>",
             unsafe_allow_html=True,
@@ -1144,8 +998,51 @@ elif "Allocation" in menu:
 elif "Performance History" in menu:
     st.markdown("<div class='glass-card'><h3>📅 Calendar Returns</h3>", unsafe_allow_html=True)
 
-    styled_cal = calendar_df.style.format({"PORT": "{:+.2f}%", "BSE 500": "{:+.2f}%", "Alpha": "{:+.2f}%"})
+    calendar_df = compute_calendar_returns(nav_df)
 
+    # Compute live current NAVs using today's portfolio & benchmark returns
+    current_nav, current_bm_nav, _ = fetch_current_nav_values_from_df(nav_df)
+
+    current_month_str = pd.Timestamp.today().strftime("%b-%y")
+
+    # Add current month only if not already present
+    if "Month" in calendar_df.columns and current_month_str not in calendar_df["Month"].astype(str).values:
+
+        # Find last NAV before current month started
+        month_start = pd.Timestamp.today().replace(day=1)
+        prev_month_rows = nav_df[nav_df["DATE"] < month_start]
+
+        if not prev_month_rows.empty:
+            month_start_row = prev_month_rows.iloc[-1]
+
+            month_start_port_nav = float(month_start_row["PORT NAV"])
+            month_start_bm_nav = float(month_start_row["BM NAV"])
+
+            # Current month return = current live NAV vs month start NAV
+            live_month_return = (
+                (current_nav - month_start_port_nav) / month_start_port_nav
+            ) * 100
+
+            live_month_bm_return = (
+                (current_bm_nav - month_start_bm_nav) / month_start_bm_nav
+            ) * 100
+
+            live_row = pd.DataFrame(
+                [
+                    {
+                        "Month": current_month_str,
+                        "PORT": round(live_month_return, 2),
+                        "BSE 500": round(live_month_bm_return, 2),
+                        "Alpha": round(
+                            live_month_return - live_month_bm_return, 2
+                        ),
+                    }
+                ]
+            )
+
+        calendar_df = pd.concat([calendar_df, live_row], ignore_index=True)
+
+    styled_cal = calendar_df.style.format({"PORT": "{:+.2f}%", "BSE 500": "{:+.2f}%", "Alpha": "{:+.2f}%"})
     if "Alpha" in calendar_df.columns:
         styled_cal = styled_cal.map(style_alpha, subset=["Alpha"])
     st.dataframe(styled_cal, use_container_width=True)
@@ -1167,26 +1064,9 @@ elif "Performance History" in menu:
 elif "Detailed Tickers" in menu:
     st.markdown("<div class='glass-card'><h3>📋 Detailed Ticker Performance</h3>", unsafe_allow_html=True)
     styled = st.session_state.daily_table.copy()
-    
-    # Reorder and rename columns for better flow
-    display_map = {
-        "Ticker": "TICKER",
-        "Yesterday Buy/Hold": "YESTERDAY VALUE",
-        "Yesterday Close": "YESTERDAY CLOSE",
-        "Current Price": "CURRENT PRICE",
-        "% Change": "% CHANGE",
-        "Current Value": "CURRENT VALUE"
-    }
-    
-    # Keep only columns we want to show
-    cols_to_show = ["Ticker", "Yesterday Buy/Hold", "Yesterday Close", "Current Price", "% Change", "Current Value"]
-    styled = styled[cols_to_show].rename(columns=display_map)
-
-    for col in ["YESTERDAY VALUE", "YESTERDAY CLOSE", "CURRENT PRICE", "CURRENT VALUE"]:
+    for col in ["Yesterday Buy/Hold", "Yesterday Close", "Current Price", "Current Value"]:
         styled[col] = styled[col].apply(fmt_inr)
-    
-    styled["% CHANGE"] = styled["% CHANGE"].apply(colour_pct_val)
-    
+    styled["% Change"] = styled["% Change"].apply(colour_pct_val)
     st.write(styled.to_html(escape=False, index=False, classes="custom-table"), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1240,43 +1120,67 @@ elif "Trailing Returns" in menu:
 # ─────────────────────────────────────────────
 elif "Monthly Performance" in menu:
     st.markdown("<div class='glass-card'><h3>📆 Monthly Performance Dashboard</h3>", unsafe_allow_html=True)
-    # Portfolio Return Card from Calendar Returns
-    monthly_port_return, month_used = get_latest_calendar_portfolio_return(calendar_df)
-
-    st.markdown(
-    f"""
-    <div class='glass-card'>
-        <p class='metric-title'>PORTFOLIO RETURN ({month_used})</p>
-        <p class='metric-value'>{monthly_port_return:+.2f}%</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
     if not os.path.exists(MONTHLY_DATA_PATH):
         st.error(f"File not found: {MONTHLY_DATA_PATH}")
     else:
         if st.button("Fetch Monthly Performance"):
             with st.spinner("Fetching Monthly Performance..."):
-                result_df = build_monthly_performance(MONTHLY_DATA_PATH)
+                result_df, display_dt = build_monthly_performance(MONTHLY_DATA_PATH)
                 if result_df is not None and not result_df.empty:
-                    st.success("Performance calculated successfully ✅")
-                    st.subheader("Stock Performance Table")
+                    display_month_str = display_dt.strftime("%b-%y")
+                    st.success(f"Performance for {display_month_str} calculated ✅")
+                    st.subheader(f"Stock Performance - {display_month_str}")
                     styled_stock = result_df.style.format({"Start Price": "{:.2f}", "Current Price": "{:.2f}", "Return %": "{:+.2f}%"})
                     if "Return %" in result_df.columns:
                         styled_stock = styled_stock.map(style_alpha, subset=["Return %"])
                     st.dataframe(styled_stock, use_container_width=True)
 
-                    # Fetch April return from calendar_df for override
-                    april_ret = None
-                    if not calendar_df.empty:
-                        # Find row for April
-                        april_row = calendar_df[calendar_df["Month"].str.contains("Apr", case=False)]
-                        if not april_row.empty:
-                            april_ret = april_row.iloc[0]["PORT"]
+                    target_ret = None
+                    if not calendar_df.empty and display_dt:
+                        temp_cal = calendar_df.copy()
+                        temp_cal["DT"] = pd.to_datetime(temp_cal["Month"], format="%b-%y", errors="coerce")
+                        match = temp_cal[(temp_cal["DT"].dt.month == display_dt.month) & (temp_cal["DT"].dt.year == display_dt.year)]
+                        if not match.empty:
+                            target_ret = match.iloc[0]["PORT"]
 
-                    # Removed redundant Asset Contribution Table as requested
-                    pass
+                    # Non-equity returns
+                    df_temp = result_df.copy()
+                    ticker_col_name = df_temp.columns[0]
+                    df_temp["Ticker_Key"] = normalize_ticker_key(df_temp[ticker_col_name])
+                    
+                    gold_df = df_temp[df_temp["Ticker_Key"].isin(["GOLDBEES", "GOLDBESS"])]
+                    liquid_df = df_temp[df_temp["Ticker_Key"].isin(["LIQUIDCASE"])]
+                    
+                    gold_ret = gold_df["Return %"].mean() if not gold_df.empty else 0.0
+                    liquid_ret = liquid_df["Return %"].mean() if not liquid_df.empty else 0.0
+
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    m1, m2, m3 = st.columns(3)
+                    
+                    with m1:
+                        p_val = target_ret if target_ret is not None else 0.0
+                        st.markdown(f"""
+                        <div class='glass-card'>
+                            <p class='metric-title'>PORTFOLIO RETURN ({display_month_str})</p>
+                            <p class='metric-value'>{p_val:+.2f}%</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with m2:
+                        st.markdown(f"""
+                        <div class='glass-card'>
+                            <p class='metric-title'>GOLD RETURN</p>
+                            <p class='metric-value'>{gold_ret:+.2f}%</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                    with m3:
+                        st.markdown(f"""
+                        <div class='glass-card'>
+                            <p class='metric-title'>LIQUIDCASE RETURN</p>
+                            <p class='metric-value'>{liquid_ret:+.2f}%</p>
+                        </div>
+                        """, unsafe_allow_html=True)
                 else:
                     st.error("Could not build monthly performance data.")
     st.markdown("</div>", unsafe_allow_html=True)
-
