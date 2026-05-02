@@ -600,36 +600,53 @@ def build_monthly_asset_contribution_table(df, portfolio_return_override=None):
     if df is None or df.empty:
         return None
 
+    # Constants
+    weight_equity = 75.0
+    weight_gold = 10.0
+    weight_liquid = 15.0
+
+    # Extract returns from stock performance data
     ticker_col = df.columns[0]
-    equity_df = df[~df[ticker_col].isin(["GOLDBEES", "LIQUIDCASE"])]
-    gold_df = df[df[ticker_col] == "GOLDBEES"]
-    liquid_df = df[df[ticker_col] == "LIQUIDCASE"]
+    gold_df = df[df[ticker_col].isin(["GOLDBEES", "GOLDBESS"])]
+    liquid_df = df[df[ticker_col].isin(["LIQUIDCASE"])]
 
-    equity_return = equity_df["Return %"].mean() if not equity_df.empty else 0
-    gold_return = gold_df["Return %"].mean() if not gold_df.empty else 0
-    liquid_return = liquid_df["Return %"].mean() if not liquid_df.empty else 0
+    gold_return = gold_df["Return %"].mean() if not gold_df.empty else 0.0
+    liquid_return = liquid_df["Return %"].mean() if not liquid_df.empty else 0.0
 
-    asset_df = pd.DataFrame(
-        {
-            "Particular": ["Equity", "Gold", "Liquidcase"],
-            "Weight": [75.00, 10.00, 15.00],
-            "% Returns": [round(equity_return, 2), round(gold_return, 2), round(liquid_return, 2)],
-        }
-    )
-    asset_df["Contribution"] = ((asset_df["Weight"] * asset_df["% Returns"]) / 100).round(2)
+    # Calculate contributions for non-equity
+    contrib_gold = (weight_gold * gold_return) / 100.0
+    contrib_liquid = (weight_liquid * liquid_return) / 100.0
 
-    # Use override if provided, otherwise sum contributions
-    total_val = portfolio_return_override if portfolio_return_override is not None else asset_df["Contribution"].sum()
+    # Determine Total Portfolio Return (TPR)
+    if portfolio_return_override is not None:
+        total_portfolio_return = float(portfolio_return_override)
+    else:
+        # Fallback if no override: calculate equity from stocks
+        equity_df = df[~df[ticker_col].isin(["GOLDBEES", "GOLDBESS", "LIQUIDCASE"])]
+        equity_return_from_stocks = equity_df["Return %"].mean() if not equity_df.empty else 0.0
+        total_portfolio_return = (weight_equity * equity_return_from_stocks / 100.0) + contrib_gold + contrib_liquid
 
-    total_row = pd.DataFrame(
-        {
-            "Particular": ["Total"],
-            "Weight": [asset_df["Weight"].sum()],
-            "% Returns": [total_val],
-            "Contribution": [total_val],
-        }
-    )
+    # Back-calculate Equity Contribution (Residual)
+    # Total = EC + GC + LC  => EC = Total - GC - LC
+    contrib_equity = total_portfolio_return - contrib_gold - contrib_liquid
+    equity_return = (contrib_equity / weight_equity) * 100.0
+
+    asset_df = pd.DataFrame({
+        "Particular": ["Equity", "Gold", "Liquidcase"],
+        "Weight": [weight_equity, weight_gold, weight_liquid],
+        "% Returns": [equity_return, gold_return, liquid_return],
+        "Contribution": [contrib_equity, contrib_gold, contrib_liquid]
+    })
+
+    total_row = pd.DataFrame([{
+        "Particular": "Total",
+        "Weight": 100.0,
+        "% Returns": total_portfolio_return,
+        "Contribution": total_portfolio_return
+    }])
+
     return pd.concat([asset_df, total_row], ignore_index=True)
+
 
 
 
@@ -1168,21 +1185,18 @@ elif "Monthly Performance" in menu:
                         styled_stock = styled_stock.map(style_alpha, subset=["Return %"])
                     st.dataframe(styled_stock, use_container_width=True)
 
-                    # Fetch April return from calendar_df for override
-                    april_ret = None
-                    if not calendar_df.empty:
-                        # Find row for April
-                        april_row = calendar_df[calendar_df["Month"].str.contains("Apr", case=False)]
-                        if not april_row.empty:
-                            april_ret = april_row.iloc[0]["PORT"]
+                    asset_contrib_df = build_monthly_asset_contribution_table(result_df, portfolio_return_override=monthly_port_return)
 
-                    asset_contrib_df = build_monthly_asset_contribution_table(result_df, portfolio_return_override=april_ret)
                     if asset_contrib_df is not None:
                         st.subheader("Asset Contribution Table")
-                        styled_contrib = asset_contrib_df.style.format({"Weight": "{:.2f}%", "% Returns": "{:+.2f}%", "Contribution": "{:+.2f}%"})
-                        if "% Returns" in asset_contrib_df.columns and "Contribution" in asset_contrib_df.columns:
-                            styled_contrib = styled_contrib.map(style_alpha, subset=["% Returns", "Contribution"])
-                        st.dataframe(styled_contrib, use_container_width=True)
+                        # Formatting for HTML display
+                        html_contrib = asset_contrib_df.copy()
+                        html_contrib["Weight"] = html_contrib["Weight"].map(lambda x: f"{x:.2f}%")
+                        html_contrib["% Returns"] = html_contrib["% Returns"].apply(colour_pct_val)
+                        html_contrib["Contribution"] = html_contrib["Contribution"].apply(colour_pct_val)
+                        
+                        st.write(html_contrib.to_html(escape=False, index=False, classes="custom-table"), unsafe_allow_html=True)
+
                 else:
                     st.error("Could not build monthly performance data.")
     st.markdown("</div>", unsafe_allow_html=True)
