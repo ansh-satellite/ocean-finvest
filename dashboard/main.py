@@ -736,7 +736,19 @@ def compute_portfolio_return_from_table(daily_table) -> float:
     return float(contrib_df.iloc[-1]["Contribution"])
 
 
+def get_latest_calendar_portfolio_return(calendar_df):
+    """
+    Fetch the most recent portfolio return from the calendar_df.
+    Since calendar_df is now data-driven, the last row is always the latest available month.
+    """
+    if calendar_df is None or calendar_df.empty:
+        return 0.0, "No Data"
+    
+    latest_row = calendar_df.iloc[-1]
+    return float(latest_row["PORT"]), str(latest_row["Month"])
+
 def update_daily_table_with_ltp(active_holdings, ltp_map):
+
     updated = st.session_state.daily_table.copy()
     for idx, row in updated.iterrows():
         ticker = str(row["Ticker"]).upper()
@@ -1127,7 +1139,22 @@ elif "Trailing Returns" in menu:
 # ─────────────────────────────────────────────
 elif "Monthly Performance" in menu:
     st.markdown("<div class='glass-card'><h3>📆 Monthly Performance Dashboard</h3>", unsafe_allow_html=True)
+    
+    # Portfolio Return Card from Calendar Returns
+    monthly_port_return, month_used = get_latest_calendar_portfolio_return(calendar_df)
+
+    st.markdown(
+        f"""
+        <div class='glass-card'>
+            <p class='metric-title'>PORTFOLIO RETURN ({month_used})</p>
+            <p class='metric-value'>{monthly_port_return:+.2f}%</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     if not os.path.exists(MONTHLY_DATA_PATH):
+
         st.error(f"File not found: {MONTHLY_DATA_PATH}")
     else:
         if st.button("Fetch Monthly Performance"):
