@@ -33,6 +33,11 @@ def safe_save_excel(df, path):
         logger.error("   Please CLOSE THE FILE in Excel and run the script again.")
     except Exception as e:
         logger.error(f"❌ FAILED TO SAVE {path}: {e}")
+        try:
+            import streamlit as st
+            st.error(f"Error saving to {path}: {e}")
+        except:
+            pass
 
 # --- Credential Management ---
 def get_credentials():
@@ -164,7 +169,7 @@ def run_momentum_strategy(universe_file, start_date, end_date, top_n, output_roo
     total_end = pd.to_datetime(end_date)
 
     logger.info(f"Downloading price data for {len(symbol_list)} symbols...")
-    data, errors = fetch_truedata_history(symbol_list, duration='10 Y', bar_size='EOD', progress_cb=progress_cb)
+    data, errors = fetch_truedata_history(symbol_list, duration='2 Y', bar_size='EOD', progress_cb=progress_cb)
     if data.empty:
         return None
 
@@ -455,7 +460,7 @@ def build_rebalanced_hedge_book(base_portfolio_df, portfolio_end_date=None, defa
 
 # --- Main Pipeline Execution ---
 def prepare_and_process_portfolio(input_file, start_date, end_date, output_folder, 
-                                  equity_allocation=75, gold_allocation=25):
+                                  equity_allocation=75, gold_allocation=25, progress_cb=None):
     """
     Orchestrates the loading of rankings and the valuation of equity and hedge books.
     """
@@ -476,10 +481,10 @@ def prepare_and_process_portfolio(input_file, start_date, end_date, output_folde
 
     # Fetch Data for Equity
     equity_tickers = nav_df['Ticker'].unique()
-    equity_data, _ = fetch_truedata_history(equity_tickers, duration='10 Y')
+    equity_data, _ = fetch_truedata_history(equity_tickers, duration='2 Y', progress_cb=progress_cb)
 
     # Fetch Data for Baseline Gold
-    gold_data, _ = fetch_truedata_history(['GOLDBEES'], duration='10 Y')
+    gold_data, _ = fetch_truedata_history(['GOLDBEES'], duration='2 Y', progress_cb=progress_cb)
 
     # Value Equity & Baseline Gold
     final_equity = process_portfolio(nav_df, equity_data, equity_allocation, inception_date=start_date)

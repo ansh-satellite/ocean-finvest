@@ -859,14 +859,15 @@ with st.sidebar:
                     )
                     
                     if master_summary_path:
-                        st.write("Step 2: Processing Portfolio Valuation...")
+                        st.write("Step 2: Valuing Portfolio & Hedge Book...")
                         momen.prepare_and_process_portfolio(
                             input_file        = master_summary_path,
                             start_date        = "2023-04-01",
                             end_date          = datetime.now().strftime("%Y-%m-%d"),
                             output_folder     = momen.DATA_DIR,
                             equity_allocation = 75,
-                            gold_allocation   = 25
+                            gold_allocation   = 25,
+                            progress_cb       = progress_cb
                         )
                         status.update(label="✅ Data Update Complete!", state="complete", expanded=False)
                         st.success("Momentum data regenerated successfully!")
@@ -915,7 +916,8 @@ with st.spinner("Initializing Dashboard..."):
                             end_date          = datetime.now().strftime("%Y-%m-%d"),
                             output_folder     = str(momen.DATA_DIR),
                             equity_allocation = 75,
-                            gold_allocation   = 25
+                            gold_allocation   = 25,
+                            progress_cb       = progress_cb
                         )
                         status.update(label="✅ Generation Complete!", state="complete", expanded=False)
                         st.success("Data generated successfully! Reloading...")
