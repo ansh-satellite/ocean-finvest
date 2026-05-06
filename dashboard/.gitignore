@@ -13,6 +13,15 @@ secrets.toml
 *.log
 run_log.txt
 failed_tickers_log.txt
+data/*.xlsx
+data/*.csv
+data/*.txt
+
+# Exceptions for dashboard data
+!data/Sectorwise_equity_allocation.xlsx
+!data/mcap_wise_stock_allocation.xlsx
+!data/stocks_with_sectors.xlsx
+!data/Nifty_500_2025_Apr.csv
 
 # OS
 .DS_Store
