@@ -132,6 +132,7 @@ def run_momentum_strategy(universe_file, start_date, end_date, top_n, output_roo
     """
     Generates momentum rankings for a stock universe over rolling 6-month windows.
     """
+    universe_file = str(universe_file)
     if universe_file.endswith(".csv"):
         stock_list = pd.read_csv(universe_file)[["Symbol", "ISIN Code"]]
     else:
