@@ -1,3 +1,5 @@
+import lz4
+import lz4.frame
 import os
 from datetime import datetime, timedelta, timezone
 
