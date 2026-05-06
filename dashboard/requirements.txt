@@ -4,6 +4,7 @@ streamlit
 plotly
 truedata-ws
 truedata
+lz4
 yfinance
 openpyxl
 python-dateutil
