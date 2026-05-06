@@ -322,6 +322,7 @@ def build_daily_table(active_holdings, price_history_df):
 
     return pd.DataFrame(rows)
 
+#ahiya add karvaanu reshe
 def build_daily_contribution_table(daily_table):
     if daily_table is None or daily_table.empty:
         return None
@@ -613,7 +614,8 @@ def build_monthly_asset_contribution_table(df, portfolio_return_override=None):
     weight_equity = 75.0
     weight_gold = 10.0
     weight_liquid = 15.0
-
+    
+    #to be changed here
     # Extract returns from stock performance data
     ticker_col = df.columns[0]
     gold_df = df[df[ticker_col].isin(["GOLDBEES", "GOLDBESS"])]
