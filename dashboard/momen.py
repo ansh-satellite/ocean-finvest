@@ -489,9 +489,12 @@ def prepare_and_process_portfolio(input_file, start_date, end_date, output_folde
         final_portfolio = combined_base
 
     os.makedirs(output_folder, exist_ok=True)
-    filename = f"{Path(input_file).stem}_integrated_returns.xlsx"
-    output_path = os.path.join(output_folder, filename)
+    # Align filenames with main.py expectations
+    output_path = os.path.join(output_folder, "Nifty_500_2025_apr_20_stocks_results_goldsilverdebt_buyhold_returns.xlsx")
+    maxfolio_path = os.path.join(output_folder, "Momentum_Maxfolio.xlsx")
+    
     safe_save_excel(final_portfolio, output_path)
+    safe_save_excel(final_portfolio, maxfolio_path) # Also save as Maxfolio
 
     # --- NAV Comparison vs Benchmark (Nov 11, 2025 onwards) ---
     logger.info("Generating NAV comparison vs Benchmark starting Nov 11, 2025...")
@@ -523,7 +526,7 @@ def prepare_and_process_portfolio(input_file, start_date, end_date, output_folde
                                     bench_data[['Date', 'BM NAV']], 
                                     on='Date', how='inner')
                 
-                nav_comp_path = os.path.join(output_folder, "Daily_NAV_Comparison.xlsx")
+                nav_comp_path = os.path.join(output_folder, "NAV.xlsx")
                 safe_save_excel(nav_comp, nav_comp_path)
                 logger.info(f"NAV comparison saved to: {nav_comp_path}")
 

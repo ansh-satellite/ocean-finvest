@@ -824,11 +824,46 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.markdown("---")
-    if st.button("🔄 Reload Data"):
+    if st.button("🔄 Reload App Data"):
         st.cache_data.clear()
         if "daily_table" in st.session_state:
             del st.session_state["daily_table"]
         st.rerun()
+
+    st.markdown("---")
+    with st.expander("🛠️ Maintenance"):
+        st.write("Run this to regenerate the momentum model data. This process can take several minutes.")
+        if st.button("🚀 Update Momentum Data"):
+            try:
+                import momen
+                from datetime import datetime
+                
+                with st.status("Updating Momentum Data...", expanded=True) as status:
+                    st.write("Step 1: Generating Momentum Rankings...")
+                    master_summary_path = momen.run_momentum_strategy(
+                        universe_file = momen.UNIVERSE,
+                        start_date    = "2022-10-01",
+                        end_date      = datetime.now().strftime("%Y-%m-%d"),
+                        top_n         = 20
+                    )
+                    
+                    if master_summary_path:
+                        st.write("Step 2: Processing Portfolio Valuation...")
+                        momen.prepare_and_process_portfolio(
+                            input_file        = master_summary_path,
+                            start_date        = "2023-04-01",
+                            end_date          = datetime.now().strftime("%Y-%m-%d"),
+                            output_folder     = momen.DATA_DIR,
+                            equity_allocation = 75,
+                            gold_allocation   = 25
+                        )
+                        status.update(label="✅ Data Update Complete!", state="complete", expanded=False)
+                        st.success("Momentum data regenerated successfully!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to generate momentum summary.")
+            except Exception as e:
+                st.error(f"Error during data update: {e}")
 
 # ─────────────────────────────────────────────
 # Main Data Loading
@@ -837,7 +872,38 @@ with st.spinner("Initializing Dashboard..."):
     trades, last_date, raw_df, daily_snapshot = load_and_process_data(DATA_PATH)
 
     if trades is None:
-        st.error(f"Data file not found or could not be loaded: {DATA_PATH}")
+        st.warning("📊 Initial data not found. Please click the button below to generate the momentum model data for the first time. This will take a few minutes.")
+        if st.button("🚀 Generate Initial Data"):
+            try:
+                import momen
+                from datetime import datetime
+                
+                with st.status("Generating Momentum Data...", expanded=True) as status:
+                    st.write("Step 1: Downloading Price Data & Generating Rankings...")
+                    master_summary_path = momen.run_momentum_strategy(
+                        universe_file = momen.UNIVERSE,
+                        start_date    = "2022-10-01",
+                        end_date      = datetime.now().strftime("%Y-%m-%d"),
+                        top_n         = 20
+                    )
+                    
+                    if master_summary_path:
+                        st.write("Step 2: Valuing Portfolio & Hedge Book...")
+                        momen.prepare_and_process_portfolio(
+                            input_file        = master_summary_path,
+                            start_date        = "2023-04-01",
+                            end_date          = datetime.now().strftime("%Y-%m-%d"),
+                            output_folder     = str(momen.DATA_DIR),
+                            equity_allocation = 75,
+                            gold_allocation   = 25
+                        )
+                        status.update(label="✅ Generation Complete!", state="complete", expanded=False)
+                        st.success("Data generated successfully! Reloading...")
+                        st.rerun()
+                    else:
+                        st.error("Ranking generation failed.")
+            except Exception as e:
+                st.error(f"Error during data generation: {e}")
         st.stop()
 
     active_holdings = trades[trades["Is_Active"]].copy()
