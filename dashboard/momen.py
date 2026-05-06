@@ -76,20 +76,23 @@ def get_credentials():
     return None, None
 
 # --- Data Fetching ---
-def fetch_truedata_history(ticker_list, duration='1 Y', bar_size='EOD', sleep_time=0.1):
+def fetch_truedata_history(tickers, duration='2 Y', bar_size='EOD', progress_cb=None, sleep_time=0.1):
     """
     Fetches historical EOD data from TrueData for a list of tickers.
     """
     username, password = get_credentials()
     if not username or not password:
         logger.error("TrueData credentials not found!")
-        return pd.DataFrame(), ticker_list
+        return pd.DataFrame(), tickers
 
     td_hist = TD_hist(username, password)
     df_list = []
     error_list = []
+    total = len(tickers)
 
-    for ticker in ticker_list:
+    for i, ticker in enumerate(tickers):
+        if progress_cb:
+            progress_cb(i + 1, total, ticker)
         try:
             # Defensive check: Ensure ticker is valid string
             if not isinstance(ticker, str) or not ticker.strip():
@@ -128,7 +131,7 @@ def fetch_truedata_history(ticker_list, duration='1 Y', bar_size='EOD', sleep_ti
     return final_df, error_list
 
 # --- Momentum Strategy Logic ---
-def run_momentum_strategy(universe_file, start_date, end_date, top_n, output_root="Momentum_Results"):
+def run_momentum_strategy(universe_file, start_date, end_date, top_n, output_root="Momentum_Results", progress_cb=None):
     """
     Generates momentum rankings for a stock universe over rolling 6-month windows.
     """
@@ -161,7 +164,7 @@ def run_momentum_strategy(universe_file, start_date, end_date, top_n, output_roo
     total_end = pd.to_datetime(end_date)
 
     logger.info(f"Downloading price data for {len(symbol_list)} symbols...")
-    data, errors = fetch_truedata_history(symbol_list, duration='10 Y', bar_size='EOD')
+    data, errors = fetch_truedata_history(symbol_list, duration='10 Y', bar_size='EOD', progress_cb=progress_cb)
     if data.empty:
         return None
 

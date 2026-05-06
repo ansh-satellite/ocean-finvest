@@ -842,11 +842,20 @@ with st.sidebar:
                 
                 with st.status("Updating Momentum Data...", expanded=True) as status:
                     st.write("Step 1: Generating Momentum Rankings...")
+                    progress_bar = st.progress(0)
+                    progress_text = st.empty()
+                    
+                    def progress_cb(current, total, ticker):
+                        progress = current / total
+                        progress_bar.progress(progress)
+                        progress_text.text(f"Fetching {ticker} ({current}/{total})")
+
                     master_summary_path = momen.run_momentum_strategy(
                         universe_file = momen.UNIVERSE,
                         start_date    = "2022-10-01",
                         end_date      = datetime.now().strftime("%Y-%m-%d"),
-                        top_n         = 20
+                        top_n         = 20,
+                        progress_cb   = progress_cb
                     )
                     
                     if master_summary_path:
@@ -882,11 +891,20 @@ with st.spinner("Initializing Dashboard..."):
                 
                 with st.status("Generating Momentum Data...", expanded=True) as status:
                     st.write("Step 1: Downloading Price Data & Generating Rankings...")
+                    progress_bar = st.progress(0)
+                    progress_text = st.empty()
+                    
+                    def progress_cb(current, total, ticker):
+                        progress = current / total
+                        progress_bar.progress(progress)
+                        progress_text.text(f"Fetching {ticker} ({current}/{total})")
+
                     master_summary_path = momen.run_momentum_strategy(
                         universe_file = momen.UNIVERSE,
                         start_date    = "2022-10-01",
                         end_date      = datetime.now().strftime("%Y-%m-%d"),
-                        top_n         = 20
+                        top_n         = 20,
+                        progress_cb   = progress_cb
                     )
                     
                     if master_summary_path:
