@@ -13,6 +13,12 @@ from truedata import TD_hist
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 warnings.filterwarnings('ignore')
+ 
+# --- Configuration ---
+SCRIPT_DIR = Path(__file__).parent
+DATA_DIR   = SCRIPT_DIR / "data"
+# Universe file is located in the data folder
+UNIVERSE   = DATA_DIR / "Nifty_500_2025_Apr.csv"
 
 # --- Helper Utilities ---
 def safe_save_excel(df, path):
@@ -533,12 +539,6 @@ def prepare_and_process_portfolio(input_file, start_date, end_date, output_folde
     return final_portfolio
 
 if __name__ == "__main__":
-    # --- Configuration ---
-    SCRIPT_DIR = Path(__file__).parent
-    DATA_DIR   = SCRIPT_DIR / "data"
-    # Universe file is located in the data folder
-    UNIVERSE   = DATA_DIR / "Nifty_500_2025_Apr.csv"
-    
     START_DATE = "2023-04-01"
     END_DATE   = datetime.now().strftime("%Y-%m-%d") # Or "2026-05-01"
 
