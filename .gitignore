@@ -42,16 +42,33 @@ Thumbs.db
 .venv
 .streamlit/secrets.toml
 
-# Data files (Automatically generated results are ignored)
+# Data files (Automatically generated results are ignored by default)
 *.xlsx
 *.csv
 
-# Exceptions for Input/Configuration Files (MUST be tracked)
+# Exceptions for required Dashboard Configuration & Pre-Calculated Data Files
 !Sectorwise_equity_allocation.xlsx
 !mcap_wise_stock_allocation.xlsx
 !stocks_with_sectors.xlsx
-!MOMENTUM_DB_2 copy/Universe/*.csv
-!dashboard/data/Sectorwise_equity_allocation.xlsx
-!dashboard/data/mcap_wise_stock_allocation.xlsx
-!dashboard/data/stocks_with_sectors.xlsx
-!dashboard/data/Nifty_500_2025_Apr.csv
+!Momentum_Maxfolio.xlsx
+!april_stocks.xlsx
+!MOMENTUM_DB_2 copy/data/Daily_NAV_Comparison.xlsx
+!MOMENTUM_DB_2 copy/data/master_momentum_summary_integrated_returns.xlsx
+!MOMENTUM_DB_2 copy/Trials/Nifty_500_2025_apr_20_stocks_results_goldsilverdebt_buyhold_returns.xlsx
+
+# Exclude local dev notebooks, scripts, and logs
+app.py
+trial.py
+new_strategy.py
+MomentumDashboard.html
+dashboard/
+Ocean Finvest[1]/
+MOMENTUM_DB_2 copy/gvtd.py
+MOMENTUM_DB_2 copy/Integrated_Momentum.py
+MOMENTUM_DB_2 copy/Integrated_Momentum.ipynb
+MOMENTUM_DB_2 copy/*.ipynb
+MOMENTUM_DB_2 copy/*.py
+.devcontainer/
+BSE500_Daily_Data.csv
+run_log.txt
+failed_tickers_log.txt
