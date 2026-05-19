@@ -266,35 +266,49 @@ def build_daily_table(active_holdings, price_history_df):
         if source_df is None or source_df.empty:
             continue
 
-        # ── Find previous available date (strictly before today) ────────
         available_dates = sorted(source_df["Date"].dt.normalize().unique())
-        prev_dates = [d for d in available_dates if d < today]
+        
+        if not available_dates:
+            continue
 
-        if not prev_dates:
-            prev_date = min(available_dates)
+        # ── Determine Today and Yesterday dates ─────────────────────────
+        if today in available_dates:
+            today_idx = available_dates.index(today)
+            today_dt = today
+            # If today is the first date, yesterday is also today
+            yesterday_dt = available_dates[today_idx - 1] if today_idx > 0 else today
         else:
-            prev_date = max(prev_dates)
+            # Last available is "Today", second-to-last is "Yesterday"
+            today_dt = available_dates[-1]
+            yesterday_dt = available_dates[-2] if len(available_dates) > 1 else available_dates[-1]
 
-        # ── Today's row (if present) else use last available ────────────
-        today_snap = source_df[source_df["Date"].dt.normalize() == today]
-        prev_snap  = source_df[source_df["Date"].dt.normalize() == prev_date]
+        # Get the actual data rows
+        today_snap = source_df[source_df["Date"].dt.normalize() == today_dt]
+        yest_snap  = source_df[source_df["Date"].dt.normalize() == yesterday_dt]
 
-        yest_row   = prev_snap.iloc[-1]  if not prev_snap.empty  else source_df.iloc[0]
-        today_row  = today_snap.iloc[-1] if not today_snap.empty else source_df.iloc[-1]
+        if today_snap.empty or yest_snap.empty:
+            continue
 
-        yest_close = yest_row["Close"]
-        yest_val   = yest_row["Buy_Hold_Value"]
-        curr_price = today_row["Close"]
+        t_row = today_snap.iloc[-1]
+        y_row = yest_snap.iloc[-1]
 
-        pct = ((curr_price - yest_close) / yest_close * 100) if yest_close != 0 else 0.0
+        y_close = float(y_row["Close"])
+        y_val   = float(y_row["Buy_Hold_Value"])
+        t_close = float(t_row["Close"])
+        t_val   = float(t_row["Buy_Hold_Value"]) # Use the actual value from the file for "today"
+
+        # Calculate % Change from Yesterday Close to Today Close
+        change_pct = ((t_close - y_close) / y_close * 100) if y_close != 0 else 0.0
 
         rows.append({
             "Ticker":              ticker,
-            "Yesterday Buy/Hold":  yest_val,
-            "Yesterday Close":     yest_close,
-            "Current Price":       curr_price,
-            "% Change":            pct,
-            "Current Value":       yest_val * (1 + pct / 100),
+            "Yesterday Buy/Hold":  y_val,
+            "Yesterday Close":     y_close,
+            "Current Price":       t_close,
+            "Ref_Close":           t_close,    # Reference for live refresh
+            "Ref_Val":             t_val,      # Reference for live refresh
+            "% Change":            round(change_pct, 2),
+            "Current Value":       t_val,
         })
 
     return pd.DataFrame(rows)
@@ -428,6 +442,21 @@ def fetch_current_nav_values_from_df(nav_df):
             row = nav_df.iloc[-1]
             
     return float(row["PORT NAV"]), float(row["BM NAV"]), row["DATE"]
+
+
+def get_live_projected_nav(nav_df, live_port_ret, live_bm_ret):
+    """
+    Project the current live NAV by taking the last known NAV from the file
+    and applying the live daily returns.
+    """
+    file_nav, file_bm_nav, file_date = fetch_current_nav_values_from_df(nav_df)
+    
+    # Project forward
+    projected_nav = file_nav * (1 + (live_port_ret or 0) / 100)
+    projected_bm_nav = file_bm_nav * (1 + (live_bm_ret or 0) / 100)
+    
+    # Use today's date for trailing calculations
+    return projected_nav, projected_bm_nav, pd.Timestamp.today().normalize()
 
 
 def calculate_trailing_return(nav_df, days, current_nav, current_bm_nav, current_date):
@@ -602,40 +631,37 @@ def build_monthly_performance(file_path):
     return latest_df, month_last_date
 
 
-def build_monthly_asset_contribution_table(monthly_performance_df, portfolio_return_override=None):
-    if monthly_performance_df is None or monthly_performance_df.empty:
+def build_monthly_asset_contribution_table(df):
+    if df is None or df.empty:
         return None
 
-    df = monthly_performance_df.copy()
     ticker_col = df.columns[0]
-    df["Ticker_Key"] = normalize_ticker_key(df[ticker_col])
-    
-    weight_equity = 75.0
-    weight_gold = 10.0
-    weight_liquid = 15.0
+    equity_df = df[~df[ticker_col].isin(["GOLDBEES", "LIQUIDCASE"])]
+    gold_df = df[df[ticker_col] == "GOLDBEES"]
+    liquid_df = df[df[ticker_col] == "LIQUIDCASE"]
 
-    gold_df = df[df["Ticker_Key"].isin(["GOLDBEES", "GOLDBESS"])]
-    liquid_df = df[df["Ticker_Key"].isin(["LIQUIDCASE"])]
+    equity_return = equity_df["Return %"].mean() if not equity_df.empty else 0
+    gold_return = gold_df["Return %"].mean() if not gold_df.empty else 0
+    liquid_return = liquid_df["Return %"].mean() if not liquid_df.empty else 0
 
-    gold_return = gold_df["Return %"].mean() if not gold_df.empty else 0.0
-    liquid_return = liquid_df["Return %"].mean() if not liquid_df.empty else 0.0
+    asset_df = pd.DataFrame(
+        {
+            "Particular": ["Equity", "Gold", "Liquidcase"],
+            "Weight": [75.00, 10.00, 15.00],
+            "% Returns": [round(equity_return, 2), round(gold_return, 2), round(liquid_return, 2)],
+        }
+    )
+    asset_df["Contribution"] = ((asset_df["Weight"] * asset_df["% Returns"]) / 100).round(2)
 
-    if portfolio_return_override is not None and not pd.isna(portfolio_return_override):
-        target_val = float(portfolio_return_override)
-        equity_return = (target_val / weight_equity) * 100.0
-        contrib_equity = target_val
-    else:
-        equity_df = df[~df["Ticker_Key"].isin(["GOLDBEES", "GOLDBESS", "LIQUIDCASE"])]
-        equity_return = equity_df["Return %"].mean() if not equity_df.empty else 0.0
-        contrib_equity = (weight_equity * equity_return) / 100.0
-
-    asset_df = pd.DataFrame({
-        "Particular": ["Equity", "Gold", "Liquidcase"],
-        "Weight": [weight_equity, weight_gold, weight_liquid],
-        "% Returns": [equity_return, gold_return, liquid_return],
-        "Contribution": [contrib_equity, (weight_gold * gold_return) / 100.0, (weight_liquid * liquid_return) / 100.0]
-    })
-    return asset_df
+    total_row = pd.DataFrame(
+        {
+            "Particular": ["Total"],
+            "Weight": [asset_df["Weight"].sum()],
+            "% Returns": [asset_df["Contribution"].sum()],
+            "Contribution": [asset_df["Contribution"].sum()],
+        }
+    )
+    return pd.concat([asset_df, total_row], ignore_index=True)
 
 
 def fetch_benchmark_return_truedata() -> dict:
@@ -746,12 +772,21 @@ def update_daily_table_with_ltp(active_holdings, ltp_map):
         ticker = str(row["Ticker"]).upper()
         ltp = ltp_map.get(ticker)
         if ltp is not None:
-            yest_val = row["Yesterday Buy/Hold"]
-            yest_close = row["Yesterday Close"]
-            pct = ((ltp - yest_close) / yest_close * 100) if pd.notna(yest_close) and yest_close != 0 else 0.0
-            updated.at[idx, "Current Value"] = round(yest_val * (1 + pct / 100), 4)
+            # We compare Live Price vs the "Today" price from the static table
+            ref_close = row.get("Ref_Close", row["Current Price"])
+            ref_val   = row.get("Ref_Val", row["Current Value"])
+            
+            # Live change relative to the last close in file
+            live_pct = ((ltp - ref_close) / ref_close * 100) if ref_close != 0 else 0.0
+            
+            # Update Current Price and Current Value
             updated.at[idx, "Current Price"] = ltp
-            updated.at[idx, "% Change"] = round(pct, 2)
+            updated.at[idx, "Current Value"] = round(ref_val * (1 + live_pct / 100), 4)
+            
+            # The displayed % Change should be the total change from Yesterday (in file) to Live
+            yest_close = row["Yesterday Close"]
+            total_pct = ((ltp - yest_close) / yest_close * 100) if yest_close != 0 else 0.0
+            updated.at[idx, "% Change"] = round(total_pct, 2)
 
     st.session_state.daily_table = updated
     st.session_state.last_refreshed = datetime.now().strftime("%d %b %Y  %H:%M:%S")
@@ -780,6 +815,8 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🔄 Reload Data"):
         st.cache_data.clear()
+        if "daily_table" in st.session_state:
+            del st.session_state["daily_table"]
         st.rerun()
 
 # ─────────────────────────────────────────────
@@ -1001,7 +1038,7 @@ elif "Performance History" in menu:
     calendar_df = compute_calendar_returns(nav_df)
 
     # Compute live current NAVs using today's portfolio & benchmark returns
-    current_nav, current_bm_nav, _ = fetch_current_nav_values_from_df(nav_df)
+    current_nav, current_bm_nav, current_date = get_live_projected_nav(nav_df, port_ret, benchmark_ret)
 
     current_month_str = pd.Timestamp.today().strftime("%b-%y")
 
@@ -1040,7 +1077,7 @@ elif "Performance History" in menu:
                 ]
             )
 
-        calendar_df = pd.concat([calendar_df, live_row], ignore_index=True)
+            calendar_df = pd.concat([calendar_df, live_row], ignore_index=True)
 
     styled_cal = calendar_df.style.format({"PORT": "{:+.2f}%", "BSE 500": "{:+.2f}%", "Alpha": "{:+.2f}%"})
     if "Alpha" in calendar_df.columns:
@@ -1064,9 +1101,26 @@ elif "Performance History" in menu:
 elif "Detailed Tickers" in menu:
     st.markdown("<div class='glass-card'><h3>📋 Detailed Ticker Performance</h3>", unsafe_allow_html=True)
     styled = st.session_state.daily_table.copy()
-    for col in ["Yesterday Buy/Hold", "Yesterday Close", "Current Price", "Current Value"]:
+    
+    # Reorder and rename columns for better flow
+    display_map = {
+        "Ticker": "TICKER",
+        "Yesterday Buy/Hold": "YESTERDAY VALUE",
+        "Yesterday Close": "YESTERDAY CLOSE",
+        "Current Price": "CURRENT PRICE",
+        "% Change": "% CHANGE",
+        "Current Value": "CURRENT VALUE"
+    }
+    
+    # Keep only columns we want to show
+    cols_to_show = ["Ticker", "Yesterday Buy/Hold", "Yesterday Close", "Current Price", "% Change", "Current Value"]
+    styled = styled[cols_to_show].rename(columns=display_map)
+
+    for col in ["YESTERDAY VALUE", "YESTERDAY CLOSE", "CURRENT PRICE", "CURRENT VALUE"]:
         styled[col] = styled[col].apply(fmt_inr)
-    styled["% Change"] = styled["% Change"].apply(colour_pct_val)
+    
+    styled["% CHANGE"] = styled["% CHANGE"].apply(colour_pct_val)
+    
     st.write(styled.to_html(escape=False, index=False, classes="custom-table"), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1076,7 +1130,7 @@ elif "Detailed Tickers" in menu:
 elif "Trailing Returns" in menu:
     st.markdown("<div class='glass-card'><h3>📊 Trailing Returns Snapshot</h3>", unsafe_allow_html=True)
     try:
-        current_nav, current_bm_nav, current_date = fetch_current_nav_values_from_df(nav_df)
+        current_nav, current_bm_nav, current_date = get_live_projected_nav(nav_df, port_ret, benchmark_ret)
 
         nav_col1, nav_col2 = st.columns(2)
         nav_col1.metric("Current Portfolio NAV", f"{current_nav:.2f}")
@@ -1135,6 +1189,7 @@ elif "Monthly Performance" in menu:
                         styled_stock = styled_stock.map(style_alpha, subset=["Return %"])
                     st.dataframe(styled_stock, use_container_width=True)
 
+                    # Fetch matching month return from calendar_df for override
                     target_ret = None
                     if not calendar_df.empty and display_dt:
                         temp_cal = calendar_df.copy()
@@ -1143,7 +1198,7 @@ elif "Monthly Performance" in menu:
                         if not match.empty:
                             target_ret = match.iloc[0]["PORT"]
 
-                    # Non-equity returns
+                    # Logic for Gold and Liquid returns
                     df_temp = result_df.copy()
                     ticker_col_name = df_temp.columns[0]
                     df_temp["Ticker_Key"] = normalize_ticker_key(df_temp[ticker_col_name])

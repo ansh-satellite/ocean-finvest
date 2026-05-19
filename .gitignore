@@ -57,7 +57,7 @@ Thumbs.db
 !MOMENTUM_DB_2 copy/Trials/Nifty_500_2025_apr_20_stocks_results_goldsilverdebt_buyhold_returns.xlsx
 
 # Exclude local dev notebooks, scripts, and logs
-app.py
+main.py
 trial.py
 new_strategy.py
 MomentumDashboard.html
