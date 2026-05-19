@@ -46,15 +46,16 @@ Thumbs.db
 *.xlsx
 *.csv
 
-# Exceptions for required Dashboard Configuration & Pre-Calculated Data Files
+# Exceptions for required Dashboard Configuration, Data, and Backend engine scripts
 !Sectorwise_equity_allocation.xlsx
 !mcap_wise_stock_allocation.xlsx
 !stocks_with_sectors.xlsx
 !Momentum_Maxfolio.xlsx
 !april_stocks.xlsx
-!MOMENTUM_DB_2 copy/data/Daily_NAV_Comparison.xlsx
-!MOMENTUM_DB_2 copy/data/master_momentum_summary_integrated_returns.xlsx
-!MOMENTUM_DB_2 copy/Trials/Nifty_500_2025_apr_20_stocks_results_goldsilverdebt_buyhold_returns.xlsx
+!MOMENTUM_DB_2 copy/Integrated_Momentum.py
+!MOMENTUM_DB_2 copy/momen.py
+!MOMENTUM_DB_2 copy/truedata_connector.py
+!MOMENTUM_DB_2 copy/Universe/Nifty_500_2025_Apr.csv
 
 # Exclude local dev notebooks, scripts, and logs
 main.py
@@ -64,10 +65,8 @@ MomentumDashboard.html
 dashboard/
 Ocean Finvest[1]/
 MOMENTUM_DB_2 copy/gvtd.py
-MOMENTUM_DB_2 copy/Integrated_Momentum.py
 MOMENTUM_DB_2 copy/Integrated_Momentum.ipynb
 MOMENTUM_DB_2 copy/*.ipynb
-MOMENTUM_DB_2 copy/*.py
 .devcontainer/
 BSE500_Daily_Data.csv
 run_log.txt
